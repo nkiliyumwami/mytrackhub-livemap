@@ -1,714 +1,788 @@
-const { EventHubConsumerClient } = require("@azure/event-hubs");
-const express = require("express");
-const path = require("path");
-const https = require("https");
-const fs = require("fs");
+// =============================================================================
+// MyTrackHub - Multi-User Real-Time GPS Tracking Server
+// Version: 3.0 - Multi-User Authentication
+// =============================================================================
 
-// ============================================
+const express = require('express');
+const { EventHubConsumerClient } = require('@azure/event-hubs');
+const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs');
+
+const app = express();
+app.use(express.json());
+app.use(express.static(__dirname));
+
+// =============================================================================
 // CONFIGURATION
-// ============================================
-const EVENT_HUB_NAME = "iothub-ehub-mytrackhub-69020481-3cfd6703c6";
-const CONSUMER_GROUP = "$Default";
-const PORT = process.env.PORT || 3000;
+// =============================================================================
 
-// Telegram Configuration
-const TELEGRAM_BOT_TOKEN = "8350895730:AAGfUCIS2iXV_rvRIdOkpEpvyVIk_7XFmNo";
-const TELEGRAM_CHAT_ID = "7931850982";
+const CONFIG = {
+    PORT: 3000,
 
-// Authentication Configuration
-const AUTH_ENABLED = true;
-const AUTH_USERNAME = "emmanuel";
-const AUTH_PASSWORD = "MyTrack2025!";
+    // Azure IoT Hub
+    IOT_CONNECTION: "Endpoint=sb://iothub-ns-smartviewa-62134369-d1026f7567.servicebus.windows.net/;SharedAccessKeyName=iothubowner;SharedAccessKey=YOUR_KEY;EntityPath=smartviewafricahub",
+    IOT_CONSUMER_GROUP: "$Default",
 
-// Mapbox Configuration (for road snapping)
-const MAPBOX_ACCESS_TOKEN = "pk.eyJ1IjoibmtpbGl5dW13YW1pIiwiYSI6ImNtaWgweTJ6aDAxeDkzZHB6dGN4eHNoeHAifQ.MSok94Ifl-UemvqAOAfTzg";
+    // Mapbox (for road snapping)
+    MAPBOX_TOKEN: "pk.eyJ1IjoiZW1tYW51ZWxuayIsImEiOiJjbTQ1MG9hMWkwNWdyMmpxdWpraTFnNXo0In0.dSNeXpanOi9MG4BxB5MKcA",
 
-// Location Filtering
-const MAX_ACCURACY_METERS = 50;
-const MIN_DISTANCE_METERS = 3;
-const SNAP_BATCH_SIZE = 15;
-const SNAP_RADIUS_METERS = 50;
-const BATCH_OVERLAP = 3;
+    // Telegram (Admin alerts only)
+    TELEGRAM_BOT_TOKEN: "7866877953:AAH5Cs_mT8qgoxK-TL7FyaYzAU6tnNvRk_I",
+    TELEGRAM_CHAT_ID: "6370392783",
 
-// ============================================
-// DATA STORAGE
-// ============================================
-let deviceData = {};
-let snappedHistory = [];
-const SNAPPED_HISTORY_FILE = path.join(__dirname, "snapped_history.json");
-const DEVICES_FILE = path.join(__dirname, "devices.json");
+    // JWT Secret (for session tokens)
+    JWT_SECRET: crypto.randomBytes(64).toString('hex'),
 
-// ============================================
-// TELEGRAM ALERTS
-// ============================================
-function sendTelegramAlert(message) {
-    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-    const data = JSON.stringify({
-        chat_id: TELEGRAM_CHAT_ID,
-        text: message,
-        parse_mode: "HTML"
-    });
+    // Admin credentials
+    ADMIN_EMAIL: "emmanuel@smartviewafrica.com",
+    ADMIN_PASSWORD: "MyTrack2025!"
+};
 
-    const options = {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Content-Length": data.length
-        }
+// =============================================================================
+// DATA STORAGE (JSON Files)
+// =============================================================================
+
+const DATA_DIR = path.join(__dirname, 'data');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
+
+const dataFiles = {
+    users: path.join(DATA_DIR, 'users.json'),
+    invites: path.join(DATA_DIR, 'invites.json'),
+    devices: path.join(DATA_DIR, 'devices.json'),
+    geofences: path.join(DATA_DIR, 'geofences.json'),
+    history: path.join(DATA_DIR, 'snapped_history.json')
+};
+
+// Initialize data files if they don't exist
+function initDataFiles() {
+    // Admin user
+    const defaultUsers = {
+        users: [{
+            id: 'admin-001',
+            email: CONFIG.ADMIN_EMAIL,
+            passwordHash: hashPassword(CONFIG.ADMIN_PASSWORD),
+            role: 'admin',
+            name: 'Emmanuel',
+            createdAt: new Date().toISOString()
+        }]
     };
 
-    const req = https.request(url, options, (res) => {
-        if (res.statusCode === 200) {
-            console.log("Telegram alert sent!");
-        } else {
-            console.log("Telegram alert failed:", res.statusCode);
-        }
-    });
-
-    req.on("error", (e) => {
-        console.error("Telegram error:", e.message);
-    });
-
-    req.write(data);
-    req.end();
+    if (!fs.existsSync(dataFiles.users)) {
+        fs.writeFileSync(dataFiles.users, JSON.stringify(defaultUsers, null, 2));
+    }
+    if (!fs.existsSync(dataFiles.invites)) {
+        fs.writeFileSync(dataFiles.invites, JSON.stringify({ invites: [] }, null, 2));
+    }
+    if (!fs.existsSync(dataFiles.devices)) {
+        fs.writeFileSync(dataFiles.devices, JSON.stringify({ devices: [] }, null, 2));
+    }
+    if (!fs.existsSync(dataFiles.geofences)) {
+        fs.writeFileSync(dataFiles.geofences, JSON.stringify({ geofences: [] }, null, 2));
+    }
+    if (!fs.existsSync(dataFiles.history)) {
+        fs.writeFileSync(dataFiles.history, JSON.stringify({ history: [] }, null, 2));
+    }
 }
 
-// ============================================
-// HISTORY MANAGEMENT
-// ============================================
-function loadSnappedHistory() {
+function loadData(file) {
     try {
-        if (fs.existsSync(SNAPPED_HISTORY_FILE)) {
-            snappedHistory = JSON.parse(fs.readFileSync(SNAPPED_HISTORY_FILE, "utf8"));
-            console.log("Loaded " + snappedHistory.length + " snapped locations");
-        }
-    } catch (err) {
-        console.log("No snapped history found");
-        snappedHistory = [];
-    }
-}
-
-function saveSnappedHistory() {
-    const MAX_POINTS = 20000;
-    if (snappedHistory.length > MAX_POINTS) {
-        snappedHistory = snappedHistory.slice(-MAX_POINTS);
-    }
-    fs.writeFileSync(SNAPPED_HISTORY_FILE, JSON.stringify(snappedHistory));
-}
-
-// ============================================
-// DEVICE MANAGEMENT
-// ============================================
-function loadDevices() {
-    try {
-        if (fs.existsSync(DEVICES_FILE)) {
-            const saved = JSON.parse(fs.readFileSync(DEVICES_FILE, "utf8"));
-            Object.keys(saved).forEach(id => {
-                deviceData[id] = {
-                    ...saved[id],
-                    pendingPoints: [],
-                    lastBatchPoints: []
-                };
-            });
-            console.log("Loaded " + Object.keys(deviceData).length + " devices");
-        }
-    } catch (err) {
-        console.log("No saved devices found");
-    }
-}
-
-function saveDevices() {
-    const toSave = {};
-    Object.keys(deviceData).forEach(id => {
-        toSave[id] = {
-            deviceId: deviceData[id].deviceId,
-            name: deviceData[id].name,
-            color: deviceData[id].color,
-            latestLocation: deviceData[id].latestLocation
-        };
-    });
-    fs.writeFileSync(DEVICES_FILE, JSON.stringify(toSave, null, 2));
-}
-
-loadSnappedHistory();
-loadDevices();
-
-// Device colors for multi-device support
-const DEVICE_COLORS = ["#e74c3c", "#3498db", "#2ecc71", "#9b59b6", "#f39c12", "#1abc9c", "#e91e63", "#00bcd4"];
-let colorIndex = 0;
-
-function getDeviceColor() {
-    const color = DEVICE_COLORS[colorIndex % DEVICE_COLORS.length];
-    colorIndex++;
-    return color;
-}
-
-function initializeDevice(deviceId) {
-    if (!deviceData[deviceId]) {
-        deviceData[deviceId] = {
-            deviceId: deviceId,
-            name: deviceId,
-            color: getDeviceColor(),
-            latestLocation: null,
-            lastValidLocation: null,
-            pendingPoints: [],
-            lastBatchPoints: []
-        };
-        saveDevices();
-        console.log("New device registered: " + deviceId);
-    }
-    return deviceData[deviceId];
-}
-
-// ============================================
-// MAPBOX ROAD SNAPPING
-// ============================================
-async function snapToRoads(points) {
-    if (points.length < 2) {
+        return JSON.parse(fs.readFileSync(file, 'utf8'));
+    } catch (e) {
         return null;
     }
-
-    const coordinates = points.map(p => p.longitude + "," + p.latitude).join(";");
-    const timestamps = points.map(p => p.timestamp).join(";");
-    const radiuses = points.map(() => SNAP_RADIUS_METERS).join(";");
-
-    const url = `https://api.mapbox.com/matching/v5/mapbox/walking/${coordinates}?access_token=${MAPBOX_ACCESS_TOKEN}&geometries=geojson&radiuses=${radiuses}&timestamps=${timestamps}&tidy=true&overview=full&steps=true`;
-
-    return new Promise((resolve, reject) => {
-        https.get(url, (res) => {
-            let data = "";
-            res.on("data", chunk => data += chunk);
-            res.on("end", () => {
-                try {
-                    const result = JSON.parse(data);
-                    if (result.code === "Ok" && result.matchings && result.matchings.length > 0) {
-                        const snappedCoords = result.matchings[0].geometry.coordinates;
-                        const confidence = result.matchings[0].confidence;
-                        console.log("Snapped " + points.length + " points to " + snappedCoords.length + " road points (confidence: " + (confidence * 100).toFixed(1) + "%)");
-                        resolve(snappedCoords);
-                    } else {
-                        console.log("Map matching failed:", result.code || result.message || "Unknown error");
-                        resolve(null);
-                    }
-                } catch (err) {
-                    console.log("Map matching parse error:", err.message);
-                    resolve(null);
-                }
-            });
-        }).on("error", (err) => {
-            console.log("Map matching request error:", err.message);
-            resolve(null);
-        });
-    });
 }
 
-async function processAndSnapPoints(deviceId) {
-    const device = deviceData[deviceId];
-    if (!device || device.pendingPoints.length < SNAP_BATCH_SIZE) {
-        return;
-    }
-
-    let pointsToSnap = [];
-
-    if (device.lastBatchPoints.length > 0) {
-        pointsToSnap = [...device.lastBatchPoints.slice(-BATCH_OVERLAP), ...device.pendingPoints.slice(0, SNAP_BATCH_SIZE)];
-    } else {
-        pointsToSnap = device.pendingPoints.slice(0, SNAP_BATCH_SIZE);
-    }
-
-    device.lastBatchPoints = device.pendingPoints.splice(0, SNAP_BATCH_SIZE);
-
-    const snappedCoords = await snapToRoads(pointsToSnap);
-
-    if (snappedCoords && snappedCoords.length > 0) {
-        const now = new Date().toISOString();
-        const startIndex = device.lastBatchPoints.length > 0 ? BATCH_OVERLAP : 0;
-
-        for (let i = startIndex; i < snappedCoords.length; i++) {
-            const coord = snappedCoords[i];
-            snappedHistory.push({
-                deviceId: deviceId,
-                latitude: coord[1],
-                longitude: coord[0],
-                snapped: true,
-                savedAt: now
-            });
-        }
-
-        saveSnappedHistory();
-        console.log("Added " + (snappedCoords.length - startIndex) + " snapped points for " + deviceId);
-    } else {
-        device.lastBatchPoints.forEach(p => {
-            snappedHistory.push({
-                ...p,
-                snapped: false,
-                savedAt: new Date().toISOString()
-            });
-        });
-        saveSnappedHistory();
-    }
+function saveData(file, data) {
+    fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
-// ============================================
-// GEOFENCING
-// ============================================
-let geofences = [];
-let geofenceStates = {};
-const GEOFENCE_FILE = path.join(__dirname, "geofences.json");
+// =============================================================================
+// PASSWORD & TOKEN UTILITIES
+// =============================================================================
 
-function loadGeofences() {
+function hashPassword(password) {
+    return crypto.createHash('sha256').update(password + 'mytrackhub-salt').digest('hex');
+}
+
+function generateToken(user) {
+    const payload = {
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+        exp: Date.now() + (24 * 60 * 60 * 1000) // 24 hours
+    };
+    const data = JSON.stringify(payload);
+    const signature = crypto.createHmac('sha256', CONFIG.JWT_SECRET).update(data).digest('hex');
+    return Buffer.from(data).toString('base64') + '.' + signature;
+}
+
+function verifyToken(token) {
     try {
-        if (fs.existsSync(GEOFENCE_FILE)) {
-            geofences = JSON.parse(fs.readFileSync(GEOFENCE_FILE, "utf8"));
-            console.log("Loaded " + geofences.length + " geofences");
-        }
-    } catch (err) {
-        console.log("No saved geofences found");
+        const [dataB64, signature] = token.split('.');
+        const data = Buffer.from(dataB64, 'base64').toString();
+        const expectedSig = crypto.createHmac('sha256', CONFIG.JWT_SECRET).update(data).digest('hex');
+        if (signature !== expectedSig) return null;
+
+        const payload = JSON.parse(data);
+        if (payload.exp < Date.now()) return null;
+        return payload;
+    } catch (e) {
+        return null;
     }
 }
 
-function saveGeofences() {
-    fs.writeFileSync(GEOFENCE_FILE, JSON.stringify(geofences, null, 2));
+function generateInviteCode() {
+    return crypto.randomBytes(16).toString('hex');
 }
 
-function calculateDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371e3;
-    const p1 = lat1 * Math.PI / 180;
-    const p2 = lat2 * Math.PI / 180;
-    const dp = (lat2 - lat1) * Math.PI / 180;
-    const dl = (lon2 - lon1) * Math.PI / 180;
+// =============================================================================
+// AUTHENTICATION MIDDLEWARE
+// =============================================================================
 
-    const a = Math.sin(dp / 2) * Math.sin(dp / 2) +
-        Math.cos(p1) * Math.cos(p2) *
-        Math.sin(dl / 2) * Math.sin(dl / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return R * c;
-}
-
-function checkGeofences(deviceId, lat, lon) {
-    geofences.forEach(gf => {
-        const distance = calculateDistance(lat, lon, gf.lat, gf.lng);
-        const isInside = distance <= gf.radius;
-        const stateKey = deviceId + "-" + gf.id;
-        const wasInside = geofenceStates[stateKey] || false;
-
-        if (!wasInside && isInside) {
-            const deviceName = deviceData[deviceId]?.name || deviceId;
-            const message = "<b>ENTERED: " + gf.name + "</b>\n\n" +
-                "Device: " + deviceName + "\n" +
-                "Location: " + lat.toFixed(6) + ", " + lon.toFixed(6) + "\n" +
-                "Time: " + new Date().toLocaleString();
-
-            console.log(deviceId + " entered " + gf.name);
-            sendTelegramAlert(message);
-        } else if (wasInside && !isInside) {
-            const deviceName = deviceData[deviceId]?.name || deviceId;
-            const message = "<b>EXITED: " + gf.name + "</b>\n\n" +
-                "Device: " + deviceName + "\n" +
-                "Location: " + lat.toFixed(6) + ", " + lon.toFixed(6) + "\n" +
-                "Time: " + new Date().toLocaleString();
-
-            console.log(deviceId + " exited " + gf.name);
-            sendTelegramAlert(message);
+function authMiddleware(requiredRole = null) {
+    return (req, res, next) => {
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ error: 'No token provided' });
         }
 
-        geofenceStates[stateKey] = isInside;
+        const token = authHeader.substring(7);
+        const payload = verifyToken(token);
+
+        if (!payload) {
+            return res.status(401).json({ error: 'Invalid or expired token' });
+        }
+
+        if (requiredRole && payload.role !== requiredRole && payload.role !== 'admin') {
+            return res.status(403).json({ error: 'Insufficient permissions' });
+        }
+
+        req.user = payload;
+        next();
+    };
+}
+
+// =============================================================================
+// AUTH API ROUTES
+// =============================================================================
+
+// Login
+app.post('/api/auth/login', (req, res) => {
+    const { email, password } = req.body;
+    const data = loadData(dataFiles.users);
+
+    const user = data.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    if (!user || user.passwordHash !== hashPassword(password)) {
+        return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    const token = generateToken(user);
+    res.json({
+        token,
+        user: {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role
+        }
     });
-}
-
-loadGeofences();
-
-// ============================================
-// EXPRESS WEB SERVER
-// ============================================
-const app = express();
-
-app.set('trust proxy', 1);
-
-// Basic Authentication Middleware
-function basicAuth(req, res, next) {
-    if (!AUTH_ENABLED) {
-        return next();
-    }
-
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader) {
-        res.setHeader('WWW-Authenticate', 'Basic realm="MyTrackHub"');
-        return res.status(401).send('Authentication required');
-    }
-
-    const base64Credentials = authHeader.split(' ')[1];
-    const credentials = Buffer.from(base64Credentials, 'base64').toString('ascii');
-    const [username, password] = credentials.split(':');
-
-    if (username === AUTH_USERNAME && password === AUTH_PASSWORD) {
-        return next();
-    }
-
-    res.setHeader('WWW-Authenticate', 'Basic realm="MyTrackHub"');
-    return res.status(401).send('Invalid credentials');
-}
-
-app.use(basicAuth);
-app.use(express.static(__dirname));
-app.use(express.json());
-
-// Serve main page
-app.get("/", (req, res) => {
-    res.sendFile(path.join(__dirname, "index.html"));
 });
 
-// API: Get all devices
-app.get("/api/devices", (req, res) => {
-    const devices = Object.values(deviceData).map(d => ({
-        deviceId: d.deviceId,
-        name: d.name,
-        color: d.color,
-        latestLocation: d.latestLocation
-    }));
-    res.json(devices);
+// Get current user
+app.get('/api/auth/me', authMiddleware(), (req, res) => {
+    const data = loadData(dataFiles.users);
+    const user = data.users.find(u => u.id === req.user.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    res.json({
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role
+    });
 });
 
-// API: Update device name/color
-app.put("/api/devices/:deviceId", (req, res) => {
-    const { deviceId } = req.params;
-    const { name, color } = req.body;
+// Validate invite code
+app.get('/api/auth/invite/:code', (req, res) => {
+    const data = loadData(dataFiles.invites);
+    const invite = data.invites.find(i => i.code === req.params.code && !i.used);
 
-    if (deviceData[deviceId]) {
-        if (name) deviceData[deviceId].name = name;
-        if (color) deviceData[deviceId].color = color;
-        saveDevices();
-        res.json({ success: true, device: deviceData[deviceId] });
-    } else {
-        res.status(404).json({ error: "Device not found" });
-    }
-});
-
-// API: Geofences
-app.post("/api/geofences", (req, res) => {
-    geofences = req.body;
-    saveGeofences();
-    console.log("Saved " + geofences.length + " geofences");
-    res.json({ success: true });
-});
-
-app.get("/api/geofences", (req, res) => {
-    res.json(geofences);
-});
-
-// API: Test Telegram
-app.get("/api/test-telegram", (req, res) => {
-    sendTelegramAlert("<b>Test Alert</b>\n\nYour MyTrackHub Telegram notifications are working!");
-    res.json({ success: true, message: "Test alert sent!" });
-});
-
-// API: History
-app.get("/api/history", (req, res) => {
-    const { start, end, deviceId } = req.query;
-
-    let filtered = snappedHistory;
-
-    if (deviceId) {
-        filtered = filtered.filter(loc => loc.deviceId === deviceId);
-    }
-
-    if (start) {
-        const startDate = new Date(start);
-        filtered = filtered.filter(loc => new Date(loc.savedAt) >= startDate);
-    }
-    if (end) {
-        const endDate = new Date(end);
-        filtered = filtered.filter(loc => new Date(loc.savedAt) <= endDate);
+    if (!invite) {
+        return res.status(404).json({ error: 'Invalid or expired invite' });
     }
 
     res.json({
-        total: filtered.length,
-        locations: filtered
+        name: invite.name,
+        email: invite.email,
+        maxDevices: invite.maxDevices
     });
 });
 
-app.get("/api/history/dates", (req, res) => {
-    const dateCounts = {};
-    snappedHistory.forEach(loc => {
-        const date = new Date(loc.savedAt).toISOString().split('T')[0];
-        dateCounts[date] = (dateCounts[date] || 0) + 1;
-    });
-    res.json(dateCounts);
-});
+// Signup (from invite link)
+app.post('/api/auth/signup', (req, res) => {
+    const { code, password, phone } = req.body;
 
-app.delete("/api/history", (req, res) => {
-    const { deviceId } = req.query;
+    const inviteData = loadData(dataFiles.invites);
+    const invite = inviteData.invites.find(i => i.code === code && !i.used);
 
-    if (deviceId) {
-        snappedHistory = snappedHistory.filter(loc => loc.deviceId !== deviceId);
-        if (deviceData[deviceId]) {
-            deviceData[deviceId].pendingPoints = [];
-            deviceData[deviceId].lastBatchPoints = [];
+    if (!invite) {
+        return res.status(400).json({ error: 'Invalid or expired invite' });
+    }
+
+    const userData = loadData(dataFiles.users);
+
+    // Check if email already exists
+    if (userData.users.find(u => u.email.toLowerCase() === invite.email.toLowerCase())) {
+        return res.status(400).json({ error: 'Account already exists for this email' });
+    }
+
+    // Create new user
+    const newUser = {
+        id: 'parent-' + Date.now(),
+        email: invite.email,
+        passwordHash: hashPassword(password),
+        role: 'parent',
+        name: invite.name,
+        phone: phone || null,
+        maxDevices: invite.maxDevices,
+        createdAt: new Date().toISOString()
+    };
+
+    userData.users.push(newUser);
+    saveData(dataFiles.users, userData);
+
+    // Mark invite as used
+    invite.used = true;
+    invite.usedAt = new Date().toISOString();
+    saveData(dataFiles.invites, inviteData);
+
+    const token = generateToken(newUser);
+    res.json({
+        token,
+        user: {
+            id: newUser.id,
+            email: newUser.email,
+            name: newUser.name,
+            role: newUser.role
         }
+    });
+});
+
+// =============================================================================
+// ADMIN API ROUTES
+// =============================================================================
+
+// Get all users (admin only)
+app.get('/api/admin/users', authMiddleware('admin'), (req, res) => {
+    const data = loadData(dataFiles.users);
+    const users = data.users.map(u => ({
+        id: u.id,
+        email: u.email,
+        name: u.name,
+        role: u.role,
+        maxDevices: u.maxDevices,
+        createdAt: u.createdAt
+    }));
+    res.json(users);
+});
+
+// Delete user (admin only)
+app.delete('/api/admin/users/:id', authMiddleware('admin'), (req, res) => {
+    const data = loadData(dataFiles.users);
+    const idx = data.users.findIndex(u => u.id === req.params.id);
+
+    if (idx === -1) return res.status(404).json({ error: 'User not found' });
+    if (data.users[idx].role === 'admin') {
+        return res.status(400).json({ error: 'Cannot delete admin user' });
+    }
+
+    data.users.splice(idx, 1);
+    saveData(dataFiles.users, data);
+
+    // Also remove their devices
+    const deviceData = loadData(dataFiles.devices);
+    deviceData.devices = deviceData.devices.filter(d => d.ownerId !== req.params.id);
+    saveData(dataFiles.devices, deviceData);
+
+    res.json({ success: true });
+});
+
+// Create invite (admin only)
+app.post('/api/admin/invites', authMiddleware('admin'), (req, res) => {
+    const { name, email, maxDevices } = req.body;
+
+    if (!name || !email) {
+        return res.status(400).json({ error: 'Name and email required' });
+    }
+
+    const data = loadData(dataFiles.invites);
+
+    // Check if invite already exists for this email
+    const existing = data.invites.find(i => i.email.toLowerCase() === email.toLowerCase() && !i.used);
+    if (existing) {
+        return res.status(400).json({ error: 'Active invite already exists for this email' });
+    }
+
+    const invite = {
+        id: 'invite-' + Date.now(),
+        code: generateInviteCode(),
+        name,
+        email,
+        maxDevices: maxDevices || 3,
+        createdAt: new Date().toISOString(),
+        used: false
+    };
+
+    data.invites.push(invite);
+    saveData(dataFiles.invites, data);
+
+    res.json({
+        ...invite,
+        link: `https://track.smartviewafrica.com/signup.html?code=${invite.code}`
+    });
+});
+
+// Get all invites (admin only)
+app.get('/api/admin/invites', authMiddleware('admin'), (req, res) => {
+    const data = loadData(dataFiles.invites);
+    const invites = data.invites.map(i => ({
+        ...i,
+        link: i.used ? null : `https://track.smartviewafrica.com/signup.html?code=${i.code}`
+    }));
+    res.json(invites);
+});
+
+// Delete invite (admin only)
+app.delete('/api/admin/invites/:id', authMiddleware('admin'), (req, res) => {
+    const data = loadData(dataFiles.invites);
+    const idx = data.invites.findIndex(i => i.id === req.params.id);
+
+    if (idx === -1) return res.status(404).json({ error: 'Invite not found' });
+
+    data.invites.splice(idx, 1);
+    saveData(dataFiles.invites, data);
+    res.json({ success: true });
+});
+
+// =============================================================================
+// DEVICE API ROUTES
+// =============================================================================
+
+// Get devices (filtered by user role)
+app.get('/api/devices', authMiddleware(), (req, res) => {
+    const data = loadData(dataFiles.devices);
+
+    let devices;
+    if (req.user.role === 'admin') {
+        devices = data.devices;
     } else {
-        snappedHistory = [];
-        Object.keys(deviceData).forEach(id => {
-            deviceData[id].pendingPoints = [];
-            deviceData[id].lastBatchPoints = [];
-        });
+        devices = data.devices.filter(d => d.ownerId === req.user.userId);
     }
 
-    saveSnappedHistory();
-    res.json({ success: true, message: "History cleared" });
+    res.json(devices);
 });
 
-// ============================================
-// SERVER-SENT EVENTS (SSE)
-// ============================================
+// Add device
+app.post('/api/devices', authMiddleware(), (req, res) => {
+    const { name, deviceId, color } = req.body;
+
+    if (!name || !deviceId) {
+        return res.status(400).json({ error: 'Name and deviceId required' });
+    }
+
+    const data = loadData(dataFiles.devices);
+
+    // Check device limit for parents
+    if (req.user.role === 'parent') {
+        const userData = loadData(dataFiles.users);
+        const user = userData.users.find(u => u.id === req.user.userId);
+        const userDevices = data.devices.filter(d => d.ownerId === req.user.userId);
+
+        if (userDevices.length >= (user.maxDevices || 3)) {
+            return res.status(400).json({ error: `Device limit reached (max ${user.maxDevices || 3})` });
+        }
+    }
+
+    // Check if deviceId already exists
+    if (data.devices.find(d => d.deviceId === deviceId)) {
+        return res.status(400).json({ error: 'Device ID already in use' });
+    }
+
+    const device = {
+        id: 'device-' + Date.now(),
+        deviceId,
+        name,
+        color: color || '#0078d4',
+        ownerId: req.user.userId,
+        ownerName: req.user.role === 'admin' ? 'Admin' : req.user.email,
+        createdAt: new Date().toISOString(),
+        lastSeen: null,
+        lastLocation: null
+    };
+
+    data.devices.push(device);
+    saveData(dataFiles.devices, data);
+
+    res.json(device);
+});
+
+// Delete device
+app.delete('/api/devices/:id', authMiddleware(), (req, res) => {
+    const data = loadData(dataFiles.devices);
+    const device = data.devices.find(d => d.id === req.params.id);
+
+    if (!device) return res.status(404).json({ error: 'Device not found' });
+
+    // Only owner or admin can delete
+    if (req.user.role !== 'admin' && device.ownerId !== req.user.userId) {
+        return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    data.devices = data.devices.filter(d => d.id !== req.params.id);
+    saveData(dataFiles.devices, data);
+    res.json({ success: true });
+});
+
+// =============================================================================
+// GEOFENCE API ROUTES
+// =============================================================================
+
+// Get geofences (filtered by user)
+app.get('/api/geofences', authMiddleware(), (req, res) => {
+    const data = loadData(dataFiles.geofences);
+
+    let geofences;
+    if (req.user.role === 'admin') {
+        geofences = data.geofences;
+    } else {
+        geofences = data.geofences.filter(g => g.ownerId === req.user.userId);
+    }
+
+    res.json(geofences);
+});
+
+// Create geofence
+app.post('/api/geofences', authMiddleware(), (req, res) => {
+    const { name, lat, lng, radius, deviceIds } = req.body;
+
+    if (!name || !lat || !lng || !radius) {
+        return res.status(400).json({ error: 'Name, lat, lng, and radius required' });
+    }
+
+    const data = loadData(dataFiles.geofences);
+
+    const geofence = {
+        id: Date.now(),
+        name,
+        lat,
+        lng,
+        radius,
+        deviceIds: deviceIds || [],
+        ownerId: req.user.userId,
+        createdAt: new Date().toISOString()
+    };
+
+    data.geofences.push(geofence);
+    saveData(dataFiles.geofences, data);
+
+    res.json(geofence);
+});
+
+// Delete geofence
+app.delete('/api/geofences/:id', authMiddleware(), (req, res) => {
+    const data = loadData(dataFiles.geofences);
+    const geofence = data.geofences.find(g => g.id === parseInt(req.params.id));
+
+    if (!geofence) return res.status(404).json({ error: 'Geofence not found' });
+
+    if (req.user.role !== 'admin' && geofence.ownerId !== req.user.userId) {
+        return res.status(403).json({ error: 'Not authorized' });
+    }
+
+    data.geofences = data.geofences.filter(g => g.id !== parseInt(req.params.id));
+    saveData(dataFiles.geofences, data);
+    res.json({ success: true });
+});
+
+// =============================================================================
+// REAL-TIME LOCATION STREAMING (SSE)
+// =============================================================================
+
 let sseClients = [];
+let latestLocations = {};
 
-app.get("/events", (req, res) => {
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("Connection", "keep-alive");
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.flushHeaders();
+app.get('/api/stream', authMiddleware(), (req, res) => {
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive'
+    });
 
-    console.log("Browser connected via SSE");
+    const client = {
+        id: Date.now(),
+        res,
+        userId: req.user.userId,
+        role: req.user.role
+    };
 
-    // Send all current devices to new client
-    const allDevices = Object.values(deviceData)
-        .filter(d => d.latestLocation)
-        .map(d => ({
-            deviceId: d.deviceId,
-            name: d.name,
-            color: d.color,
-            location: d.latestLocation
-        }));
+    sseClients.push(client);
 
-    if (allDevices.length > 0) {
-        res.write("data: " + JSON.stringify({ type: "all", devices: allDevices }) + "\n\n");
+    // Send current locations
+    const deviceData = loadData(dataFiles.devices);
+    let devices = req.user.role === 'admin'
+        ? deviceData.devices
+        : deviceData.devices.filter(d => d.ownerId === req.user.userId);
+
+    const deviceIds = devices.map(d => d.deviceId);
+
+    for (const [deviceId, location] of Object.entries(latestLocations)) {
+        if (deviceIds.includes(deviceId)) {
+            res.write(`data: ${JSON.stringify(location)}\n\n`);
+        }
     }
 
-    sseClients.push(res);
-
-    req.on("close", () => {
-        console.log("Browser disconnected");
-        sseClients = sseClients.filter(client => client !== res);
+    req.on('close', () => {
+        sseClients = sseClients.filter(c => c.id !== client.id);
     });
 });
 
-app.get("/api/locations", (req, res) => {
-    const allDevices = Object.values(deviceData)
-        .filter(d => d.latestLocation)
-        .map(d => ({
-            deviceId: d.deviceId,
-            name: d.name,
-            color: d.color,
-            location: d.latestLocation
-        }));
-    res.json(allDevices);
-});
-
-// ============================================
-// START SERVER
-// ============================================
-const server = app.listen(PORT, '127.0.0.1', () => {
-    console.log("\nMyTrackHub running on port " + PORT);
-    console.log("Public URL: https://track.smartviewafrica.com");
-    console.log("Authentication: " + (AUTH_ENABLED ? "ENABLED" : "DISABLED"));
-    console.log("Multi-Device: ENABLED");
-    console.log("Mapbox Road Snapping: ENABLED");
-    console.log("Telegram alerts: ENABLED\n");
-});
-
-// ============================================
-// BROADCAST LOCATION UPDATES
-// ============================================
-function broadcastLocation(deviceId, location) {
-    const device = deviceData[deviceId];
-    const message = JSON.stringify({
-        type: "update",
-        deviceId: deviceId,
-        name: device?.name || deviceId,
-        color: device?.color || "#e74c3c",
-        location: location
-    });
+function broadcastLocation(location) {
+    const deviceData = loadData(dataFiles.devices);
 
     sseClients.forEach(client => {
-        client.write("data: " + message + "\n\n");
+        let authorized = false;
+
+        if (client.role === 'admin') {
+            authorized = true;
+        } else {
+            const device = deviceData.devices.find(d => d.deviceId === location.deviceId);
+            if (device && device.ownerId === client.userId) {
+                authorized = true;
+            }
+        }
+
+        if (authorized) {
+            client.res.write(`data: ${JSON.stringify(location)}\n\n`);
+        }
     });
 }
 
-// ============================================
-// AZURE IOT HUB CONNECTION
-// ============================================
-async function connectToIoTHub() {
-    const eventHubConnectionString = "Endpoint=sb://ihsuprodblres069dednamespace.servicebus.windows.net/;SharedAccessKeyName=iothubowner;SharedAccessKey=itc+vGUiyCjcuEQpW0RnBZEZA7dkLZ+GzAIoTD9xJsQ=;EntityPath=iothub-ehub-mytrackhub-69020481-3cfd6703c6";
+// =============================================================================
+// HISTORY API
+// =============================================================================
 
-    const consumerClient = new EventHubConsumerClient(
-        CONSUMER_GROUP,
-        eventHubConnectionString
+app.get('/api/history', authMiddleware(), (req, res) => {
+    const { deviceId, date } = req.query;
+    const data = loadData(dataFiles.history);
+
+    let history = data.history || [];
+
+    // Filter by device
+    if (deviceId) {
+        history = history.filter(h => h.deviceId === deviceId);
+    }
+
+    // Filter by date
+    if (date) {
+        history = history.filter(h => h.timestamp.startsWith(date));
+    }
+
+    // Filter by ownership
+    if (req.user.role !== 'admin') {
+        const deviceData = loadData(dataFiles.devices);
+        const userDeviceIds = deviceData.devices
+            .filter(d => d.ownerId === req.user.userId)
+            .map(d => d.deviceId);
+        history = history.filter(h => userDeviceIds.includes(h.deviceId));
+    }
+
+    res.json(history);
+});
+
+// =============================================================================
+// AZURE IOT HUB CONNECTION
+// =============================================================================
+
+async function connectToIoTHub() {
+    console.log('Connecting to Azure IoT Hub...');
+
+    try {
+        const client = new EventHubConsumerClient(
+            CONFIG.IOT_CONSUMER_GROUP,
+            CONFIG.IOT_CONNECTION
+        );
+
+        await client.subscribe({
+            processEvents: async (events) => {
+                for (const event of events) {
+                    try {
+                        const data = event.body;
+                        if (data._type === 'location') {
+                            await processLocation(data);
+                        }
+                    } catch (e) {
+                        console.error('Event processing error:', e);
+                    }
+                }
+            },
+            processError: async (err) => {
+                console.error('Event Hub error:', err);
+            }
+        });
+
+        console.log('Connected to IoT Hub Event Stream');
+    } catch (err) {
+        console.error('Failed to connect to IoT Hub:', err);
+        setTimeout(connectToIoTHub, 5000);
+    }
+}
+
+async function processLocation(data) {
+    const location = {
+        deviceId: data.tid || 'Unknown',
+        lat: data.lat,
+        lng: data.lon,
+        accuracy: data.acc,
+        altitude: data.alt,
+        battery: data.batt,
+        speed: data.vel || 0,
+        timestamp: new Date(data.tst * 1000).toISOString()
+    };
+
+    // Detect transport mode
+    const speed = location.speed * 3.6; // m/s to km/h
+    if (speed < 2) location.mode = 'stationary';
+    else if (speed < 7) location.mode = 'walking';
+    else if (speed < 25) location.mode = 'biking';
+    else location.mode = 'driving';
+
+    // Update device last seen
+    const deviceData = loadData(dataFiles.devices);
+    const device = deviceData.devices.find(d => d.deviceId === location.deviceId);
+    if (device) {
+        device.lastSeen = location.timestamp;
+        device.lastLocation = { lat: location.lat, lng: location.lng };
+        device.battery = location.battery;
+        saveData(dataFiles.devices, deviceData);
+    }
+
+    // Store in history
+    const historyData = loadData(dataFiles.history);
+    historyData.history = historyData.history || [];
+    historyData.history.push(location);
+
+    // Keep only last 10000 points
+    if (historyData.history.length > 10000) {
+        historyData.history = historyData.history.slice(-10000);
+    }
+    saveData(dataFiles.history, historyData);
+
+    // Check geofences
+    await checkGeofences(location);
+
+    // Store and broadcast
+    latestLocations[location.deviceId] = location;
+    broadcastLocation(location);
+
+    console.log(`Location: ${location.deviceId} @ ${location.lat}, ${location.lng}`);
+}
+
+// =============================================================================
+// GEOFENCE CHECKING
+// =============================================================================
+
+let deviceGeofenceState = {};
+
+async function checkGeofences(location) {
+    const geofenceData = loadData(dataFiles.geofences);
+    const deviceData = loadData(dataFiles.devices);
+
+    const device = deviceData.devices.find(d => d.deviceId === location.deviceId);
+    if (!device) return;
+
+    const geofences = geofenceData.geofences.filter(g =>
+        g.ownerId === device.ownerId ||
+        g.deviceIds?.includes(location.deviceId)
     );
 
-    console.log("Connected to IoT Hub Event Stream");
-    console.log("Waiting for location updates from OwnTracks...\n");
+    for (const geofence of geofences) {
+        const distance = calculateDistance(
+            location.lat, location.lng,
+            geofence.lat, geofence.lng
+        );
 
-    const subscription = consumerClient.subscribe({
-        processEvents: async (events, context) => {
-            for (const event of events) {
-                try {
-                    const payload = event.body;
+        const isInside = distance <= geofence.radius;
+        const key = `${location.deviceId}-${geofence.id}`;
+        const wasInside = deviceGeofenceState[key];
 
-                    if (payload._type === "location") {
-                        const deviceId = event.systemProperties["iothub-connection-device-id"];
-                        const accuracy = payload.acc || 10;
-                        const timestamp = payload.tst;
-
-                        // Filter poor accuracy
-                        if (accuracy > MAX_ACCURACY_METERS) {
-                            console.log("Filtered [" + deviceId + "]: Poor accuracy (" + accuracy + "m)");
-                            continue;
-                        }
-
-                        const device = initializeDevice(deviceId);
-
-                        // Filter stationary points
-                        if (device.lastValidLocation) {
-                            const distance = calculateDistance(
-                                device.lastValidLocation.latitude,
-                                device.lastValidLocation.longitude,
-                                payload.lat,
-                                payload.lon
-                            );
-                            if (distance < MIN_DISTANCE_METERS) {
-                                continue;
-                            }
-                        }
-
-                        const location = {
-                            deviceId: deviceId,
-                            latitude: payload.lat,
-                            longitude: payload.lon,
-                            accuracy: accuracy,
-                            altitude: payload.alt,
-                            battery: payload.batt,
-                            velocity: payload.vel,
-                            connection: payload.conn,
-                            ssid: payload.SSID,
-                            timestamp: timestamp,
-                            receivedAt: new Date().toISOString()
-                        };
-
-                        device.latestLocation = location;
-                        device.lastValidLocation = location;
-                        saveDevices();
-
-                        // Add to pending points for road snapping
-                        device.pendingPoints.push({
-                            deviceId: deviceId,
-                            latitude: payload.lat,
-                            longitude: payload.lon,
-                            accuracy: accuracy,
-                            timestamp: timestamp,
-                            battery: payload.batt
-                        });
-
-                        console.log("Location from " + deviceId + ": " + payload.lat.toFixed(6) + ", " + payload.lon.toFixed(6) + " | Acc: " + accuracy + "m | Pending: " + device.pendingPoints.length);
-
-                        // Process batch if enough points
-                        if (device.pendingPoints.length >= SNAP_BATCH_SIZE) {
-                            processAndSnapPoints(deviceId);
-                        }
-
-                        // Check geofences
-                        checkGeofences(deviceId, payload.lat, payload.lon);
-
-                        // Broadcast to all connected browsers
-                        broadcastLocation(deviceId, location);
-                    }
-                } catch (err) {
-                    console.error("Error processing event:", err.message);
-                }
-            }
-        },
-        processError: async (err, context) => {
-            console.error("Error receiving events:", err.message);
-        }
-    }, { startPosition: { enqueuedOn: new Date() } });
-
-    // Auto-snap remaining points every 30 seconds
-    setInterval(async () => {
-        for (const deviceId of Object.keys(deviceData)) {
-            const device = deviceData[deviceId];
-            if (device.pendingPoints.length >= 2) {
-                console.log("Auto-snapping " + device.pendingPoints.length + " points for " + deviceId);
-
-                let pointsToSnap = [];
-                if (device.lastBatchPoints.length > 0) {
-                    pointsToSnap = [...device.lastBatchPoints.slice(-BATCH_OVERLAP), ...device.pendingPoints];
-                } else {
-                    pointsToSnap = [...device.pendingPoints];
-                }
-
-                const snappedCoords = await snapToRoads(pointsToSnap);
-
-                if (snappedCoords && snappedCoords.length > 0) {
-                    const now = new Date().toISOString();
-                    const startIndex = device.lastBatchPoints.length > 0 ? BATCH_OVERLAP : 0;
-
-                    for (let i = startIndex; i < snappedCoords.length; i++) {
-                        snappedHistory.push({
-                            deviceId: deviceId,
-                            latitude: snappedCoords[i][1],
-                            longitude: snappedCoords[i][0],
-                            snapped: true,
-                            savedAt: now
-                        });
-                    }
-
-                    device.lastBatchPoints = [...device.pendingPoints];
-                    device.pendingPoints = [];
-                    saveSnappedHistory();
-                }
-            }
-        }
-    }, 30000);
-
-    // Graceful shutdown
-    process.on("SIGINT", async () => {
-        console.log("\nShutting down...");
-
-        // Snap remaining points before exit
-        for (const deviceId of Object.keys(deviceData)) {
-            const device = deviceData[deviceId];
-            if (device.pendingPoints.length >= 2) {
-                console.log("Snapping remaining points for " + deviceId);
-                let pointsToSnap = device.lastBatchPoints.length > 0
-                    ? [...device.lastBatchPoints.slice(-BATCH_OVERLAP), ...device.pendingPoints]
-                    : [...device.pendingPoints];
-
-                const snappedCoords = await snapToRoads(pointsToSnap);
-                if (snappedCoords) {
-                    const now = new Date().toISOString();
-                    const startIndex = device.lastBatchPoints.length > 0 ? BATCH_OVERLAP : 0;
-
-                    for (let i = startIndex; i < snappedCoords.length; i++) {
-                        snappedHistory.push({
-                            deviceId: deviceId,
-                            latitude: snappedCoords[i][1],
-                            longitude: snappedCoords[i][0],
-                            snapped: true,
-                            savedAt: now
-                        });
-                    }
-                }
-            }
+        if (wasInside === undefined) {
+            deviceGeofenceState[key] = isInside;
+            continue;
         }
 
-        saveSnappedHistory();
-        saveDevices();
-        await subscription.close();
-        await consumerClient.close();
-        process.exit(0);
-    });
+        if (!wasInside && isInside) {
+            // Entered geofence
+            await sendAlert(device, geofence, 'entered');
+        } else if (wasInside && !isInside) {
+            // Left geofence
+            await sendAlert(device, geofence, 'left');
+        }
+
+        deviceGeofenceState[key] = isInside;
+    }
 }
 
-connectToIoTHub().catch(console.error);
+function calculateDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+}
+
+async function sendAlert(device, geofence, action) {
+    const emoji = action === 'entered' ? '📍' : '🚪';
+    const message = `${emoji} *${device.name}* ${action} *${geofence.name}*`;
+
+    // Send Telegram to admin
+    try {
+        await fetch(`https://api.telegram.org/bot${CONFIG.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                chat_id: CONFIG.TELEGRAM_CHAT_ID,
+                text: message,
+                parse_mode: 'Markdown'
+            })
+        });
+        console.log(`Alert sent: ${message}`);
+    } catch (e) {
+        console.error('Telegram error:', e);
+    }
+
+    // TODO: Send email to parent (Stage 3)
+}
+
+// =============================================================================
+// HTML PAGE ROUTES
+// =============================================================================
+
+app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'login.html')));
+app.get('/signup', (req, res) => res.sendFile(path.join(__dirname, 'signup.html')));
+app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'admin.html')));
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+
+// =============================================================================
+// START SERVER
+// =============================================================================
+
+initDataFiles();
+
+app.listen(CONFIG.PORT, () => {
+    console.log(`MyTrackHub running on port ${CONFIG.PORT}`);
+    connectToIoTHub();
+});

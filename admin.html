@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - MyTrackHub</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        body {
+            background: #f5f7fa;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .header-left h1 {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .header-left span {
+            background: #00b894;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .header-right {
+            display: flex;
+            gap: 10px;
+        }
+
+        .header-btn {
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+
+        .header-btn.primary {
+            background: #0078d4;
+            color: white;
+        }
+
+        .header-btn.secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        .header-btn:hover {
+            transform: translateY(-1px);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .stat-card .icon {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .stat-card .value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #1a1a2e;
+        }
+
+        .stat-card .label {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .section {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .section-header h2 {
+            font-size: 18px;
+            color: #1a1a2e;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #0078d4;
+            color: white;
+        }
+
+        .btn-danger {
+            background: #d63031;
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .table th,
+        .table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        .table th {
+            font-weight: 600;
+            color: #666;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+
+        .table tr:hover {
+            background: #f9f9f9;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .badge-admin {
+            background: #e8f4fd;
+            color: #0078d4;
+        }
+
+        .badge-parent {
+            background: #e8f8f0;
+            color: #00b894;
+        }
+
+        .badge-pending {
+            background: #fff8e6;
+            color: #f39c12;
+        }
+
+        .badge-used {
+            background: #f0f0f0;
+            color: #666;
+        }
+
+        .invite-link {
+            background: #f5f7fa;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .invite-link input {
+            flex: 1;
+            border: none;
+            background: transparent;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        .copy-btn {
+            padding: 4px 8px;
+            background: #0078d4;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            display: none;
+        }
+
+        .modal-overlay.show {
+            display: flex;
+        }
+
+        .modal {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            width: 100%;
+            max-width: 450px;
+            margin: 20px;
+        }
+
+        .modal h3 {
+            font-size: 20px;
+            margin-bottom: 20px;
+            color: #1a1a2e;
+        }
+
+        .form-group {
+            margin-bottom: 18px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #333;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 15px;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #0078d4;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 25px;
+        }
+
+        .modal-buttons .btn {
+            flex: 1;
+        }
+
+        .success-box {
+            background: #e8f8f0;
+            border: 1px solid #00b894;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+
+        .success-box h4 {
+            color: #00b894;
+            margin-bottom: 10px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        .empty-state .icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .table {
+                font-size: 14px;
+            }
+
+            .table th,
+            .table td {
+                padding: 8px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <div class="header-left">
+            <span>📍</span>
+            <h1>MyTrackHub Admin</h1>
+            <span>ADMIN</span>
+        </div>
+        <div class="header-right">
+            <button class="header-btn primary" onclick="window.location.href='/'">View Map</button>
+            <button class="header-btn secondary" onclick="logout()">Logout</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="icon">👥</div>
+                <div class="value" id="totalUsers">0</div>
+                <div class="label">Total Users</div>
+            </div>
+            <div class="stat-card">
+                <div class="icon">📱</div>
+                <div class="value" id="totalDevices">0</div>
+                <div class="label">Active Devices</div>
+            </div>
+            <div class="stat-card">
+                <div class="icon">📨</div>
+                <div class="value" id="pendingInvites">0</div>
+                <div class="label">Pending Invites</div>
+            </div>
+            <div class="stat-card">
+                <div class="icon">🎯</div>
+                <div class="value" id="totalGeofences">0</div>
+                <div class="label">Geofences</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-header">
+                <h2>📨 Create Invite</h2>
+            </div>
+            <form id="inviteForm"
+                style="display: grid; grid-template-columns: 1fr 1fr 120px auto; gap: 15px; align-items: end;">
+                <div class="form-group" style="margin: 0;">
+                    <label>Parent Name</label>
+                    <input type="text" id="inviteName" placeholder="Mary Johnson" required>
+                </div>
+                <div class="form-group" style="margin: 0;">
+                    <label>Email Address</label>
+                    <input type="email" id="inviteEmail" placeholder="mary@email.com" required>
+                </div>
+                <div class="form-group" style="margin: 0;">
+                    <label>Max Devices</label>
+                    <select id="inviteMaxDevices">
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3" selected>3</option>
+                        <option value="5">5</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary">Create Invite</button>
+            </form>
+
+            <div id="inviteSuccess" class="success-box" style="display: none;">
+                <h4>✅ Invite Created!</h4>
+                <p>Send this link to the parent:</p>
+                <div class="invite-link">
+                    <input type="text" id="newInviteLink" readonly>
+                    <button class="copy-btn" onclick="copyInviteLink()">Copy</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-header">
+                <h2>📨 Pending Invites</h2>
+            </div>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Max Devices</th>
+                        <th>Created</th>
+                        <th>Link</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="invitesTable">
+                    <tr>
+                        <td colspan="6" class="empty-state">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <div class="section-header">
+                <h2>👥 Registered Users</h2>
+            </div>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Role</th>
+                        <th>Devices</th>
+                        <th>Joined</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="usersTable">
+                    <tr>
+                        <td colspan="6" class="empty-state">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <div class="section-header">
+                <h2>📱 All Devices</h2>
+            </div>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Device ID</th>
+                        <th>Owner</th>
+                        <th>Last Seen</th>
+                        <th>Battery</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="devicesTable">
+                    <tr>
+                        <td colspan="6" class="empty-state">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const token = localStorage.getItem('mytrackhub_token');
+        const user = JSON.parse(localStorage.getItem('mytrackhub_user') || '{}');
+
+        // Check auth
+        if (!token || user.role !== 'admin') {
+            window.location.href = '/login.html';
+        }
+
+        // API helper
+        async function api(endpoint, method = 'GET', body = null) {
+            const options = {
+                method,
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            };
+            if (body) options.body = JSON.stringify(body);
+
+            const response = await fetch(endpoint, options);
+            if (response.status === 401) {
+                logout();
+                return null;
+            }
+            return response.json();
+        }
+
+        // Load data
+        async function loadData() {
+            const [users, invites, devices, geofences] = await Promise.all([
+                api('/api/admin/users'),
+                api('/api/admin/invites'),
+                api('/api/devices'),
+                api('/api/geofences')
+            ]);
+
+            // Update stats
+            document.getElementById('totalUsers').textContent = users?.length || 0;
+            document.getElementById('totalDevices').textContent = devices?.length || 0;
+            document.getElementById('pendingInvites').textContent =
+                invites?.filter(i => !i.used).length || 0;
+            document.getElementById('totalGeofences').textContent = geofences?.length || 0;
+
+            // Render tables
+            renderUsers(users || []);
+            renderInvites(invites || []);
+            renderDevices(devices || [], users || []);
+        }
+
+        function renderUsers(users) {
+            const tbody = document.getElementById('usersTable');
+            if (!users.length) {
+                tbody.innerHTML = '<tr><td colspan="6" class="empty-state"><div class="icon">👥</div>No users yet</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = users.map(u => `
+                <tr>
+                    <td>${u.name}</td>
+                    <td>${u.email}</td>
+                    <td><span class="badge badge-${u.role}">${u.role.toUpperCase()}</span></td>
+                    <td>${u.maxDevices || '-'}</td>
+                    <td>${new Date(u.createdAt).toLocaleDateString()}</td>
+                    <td>
+                        ${u.role !== 'admin' ?
+                    `<button class="btn btn-danger" onclick="deleteUser('${u.id}')" style="padding: 6px 12px; font-size: 12px;">Delete</button>`
+                    : '<span style="color:#999">Admin</span>'}
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function renderInvites(invites) {
+            const pending = invites.filter(i => !i.used);
+            const tbody = document.getElementById('invitesTable');
+
+            if (!pending.length) {
+                tbody.innerHTML = '<tr><td colspan="6" class="empty-state"><div class="icon">📨</div>No pending invites</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = pending.map(i => `
+                <tr>
+                    <td>${i.name}</td>
+                    <td>${i.email}</td>
+                    <td>${i.maxDevices}</td>
+                    <td>${new Date(i.createdAt).toLocaleDateString()}</td>
+                    <td>
+                        <div class="invite-link" style="max-width: 200px;">
+                            <input type="text" value="${i.link}" readonly style="font-size: 10px;">
+                            <button class="copy-btn" onclick="copyText('${i.link}')">Copy</button>
+                        </div>
+                    </td>
+                    <td>
+                        <button class="btn btn-danger" onclick="deleteInvite('${i.id}')" style="padding: 6px 12px; font-size: 12px;">Cancel</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function renderDevices(devices, users) {
+            const tbody = document.getElementById('devicesTable');
+
+            if (!devices.length) {
+                tbody.innerHTML = '<tr><td colspan="6" class="empty-state"><div class="icon">📱</div>No devices yet</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = devices.map(d => {
+                const owner = users.find(u => u.id === d.ownerId);
+                const lastSeen = d.lastSeen ? new Date(d.lastSeen).toLocaleString() : 'Never';
+                return `
+                    <tr>
+                        <td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${d.color};margin-right:8px;"></span>${d.name}</td>
+                        <td><code>${d.deviceId}</code></td>
+                        <td>${owner?.name || 'Unknown'}</td>
+                        <td>${lastSeen}</td>
+                        <td>${d.battery ? d.battery + '%' : '-'}</td>
+                        <td>
+                            <button class="btn btn-danger" onclick="deleteDevice('${d.id}')" style="padding: 6px 12px; font-size: 12px;">Delete</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Create invite
+        document.getElementById('inviteForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const name = document.getElementById('inviteName').value;
+            const email = document.getElementById('inviteEmail').value;
+            const maxDevices = parseInt(document.getElementById('inviteMaxDevices').value);
+
+            const result = await api('/api/admin/invites', 'POST', { name, email, maxDevices });
+
+            if (result && result.link) {
+                document.getElementById('newInviteLink').value = result.link;
+                document.getElementById('inviteSuccess').style.display = 'block';
+                document.getElementById('inviteForm').reset();
+                loadData();
+            }
+        });
+
+        function copyInviteLink() {
+            const input = document.getElementById('newInviteLink');
+            input.select();
+            document.execCommand('copy');
+            alert('Link copied!');
+        }
+
+        function copyText(text) {
+            navigator.clipboard.writeText(text);
+            alert('Link copied!');
+        }
+
+        async function deleteUser(id) {
+            if (!confirm('Delete this user and all their devices?')) return;
+            await api(`/api/admin/users/${id}`, 'DELETE');
+            loadData();
+        }
+
+        async function deleteInvite(id) {
+            if (!confirm('Cancel this invite?')) return;
+            await api(`/api/admin/invites/${id}`, 'DELETE');
+            loadData();
+        }
+
+        async function deleteDevice(id) {
+            if (!confirm('Delete this device?')) return;
+            await api(`/api/devices/${id}`, 'DELETE');
+            loadData();
+        }
+
+        function logout() {
+            localStorage.removeItem('mytrackhub_token');
+            localStorage.removeItem('mytrackhub_user');
+            window.location.href = '/login.html';
+        }
+
+        // Load initial data
+        loadData();
+    </script>
+</body>
+
+</html>

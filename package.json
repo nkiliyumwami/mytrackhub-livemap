@@ -1,18 +1,15 @@
 {
-  "name": "mytrackhub-livemap",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "name": "mytrackhub",
+  "version": "3.0.0",
+  "description": "Multi-User Real-Time GPS Location Tracking System",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
-    "@azure/event-hubs": "^6.0.0",
-    "express": "^5.1.0",
-    "ws": "^8.18.3"
-  }
+    "@azure/event-hubs": "^5.11.3",
+    "express": "^4.18.2"
+  },
+  "author": "Emmanuel Nkiliyumwami",
+  "license": "MIT"
 }

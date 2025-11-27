@@ -4,8 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>MyTrackHub - Multi-Device Tracking</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+    <title>MyTrackHub - Live Tracking</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <style>
         * {
             margin: 0;
@@ -13,28 +13,32 @@
             box-sizing: border-box;
         }
 
-        html,
-        body {
-            height: 100%;
-            overflow: hidden;
-        }
-
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            display: flex;
-            flex-direction: column;
+        }
+
+        #map {
+            position: fixed;
+            top: 60px;
+            left: 0;
+            right: 0;
+            bottom: 60px;
+            z-index: 1;
         }
 
         .header {
-            background: linear-gradient(135deg, #0078d4 0%, #00bcf2 100%);
-            color: white;
-            padding: 12px 15px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 60px;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
             display: flex;
-            justify-content: space-between;
             align-items: center;
-            flex-shrink: 0;
+            justify-content: space-between;
+            padding: 0 15px;
             z-index: 1000;
-            min-height: 60px;
+            color: white;
         }
 
         .header-left {
@@ -47,210 +51,209 @@
             width: 40px;
             height: 40px;
             border-radius: 50%;
-            border: 2px solid white;
-            object-fit: cover;
+            border: 2px solid rgba(255, 255, 255, 0.3);
         }
 
         .header h1 {
-            font-size: 1.1rem;
+            font-size: 18px;
+            font-weight: 600;
         }
 
         .header-subtitle {
-            font-size: 0.75rem;
+            font-size: 11px;
+            opacity: 0.7;
+        }
+
+        .user-menu {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .user-name {
+            font-size: 14px;
             opacity: 0.9;
         }
 
-        .device-count {
-            background: rgba(255, 255, 255, 0.2);
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 0.85rem;
+        .user-role {
+            font-size: 10px;
+            background: #00b894;
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+
+        .logout-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
             cursor: pointer;
+            font-size: 12px;
         }
 
-        .device-count:hover {
-            background: rgba(255, 255, 255, 0.3);
+        .device-count {
+            background: rgba(255, 255, 255, 0.15);
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 14px;
         }
 
-        #map {
-            flex: 1;
-            width: 100%;
+        .bottom-controls {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 60px;
+            background: white;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+        }
+
+        .control-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            background: none;
+            border: none;
+            color: #666;
+            font-size: 11px;
+            cursor: pointer;
+            padding: 8px 16px;
+        }
+
+        .control-btn:hover {
+            color: #0078d4;
+        }
+
+        .control-btn span {
+            font-size: 20px;
         }
 
         .device-panel {
-            position: absolute;
-            top: 70px;
-            right: 10px;
+            position: fixed;
+            top: 60px;
+            right: -320px;
+            width: 300px;
+            bottom: 60px;
             background: white;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-            z-index: 1000;
-            width: 280px;
-            max-height: 70vh;
-            overflow: hidden;
-            display: none;
+            box-shadow: -2px 0 10px rgba(0, 0, 0, 0.1);
+            z-index: 999;
+            transition: right 0.3s;
+            overflow-y: auto;
         }
 
-        .device-panel.show {
-            display: block;
+        .device-panel.open {
+            right: 0;
         }
 
         .device-panel-header {
-            background: #0078d4;
-            color: white;
-            padding: 12px 15px;
-            font-weight: 600;
+            padding: 15px;
+            background: #f5f7fa;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            font-weight: 600;
         }
 
         .device-panel-close {
             background: none;
             border: none;
-            color: white;
-            font-size: 1.2rem;
+            font-size: 20px;
             cursor: pointer;
-        }
-
-        .device-list {
-            max-height: 50vh;
-            overflow-y: auto;
+            color: #666;
         }
 
         .device-item {
-            padding: 12px 15px;
+            padding: 15px;
             border-bottom: 1px solid #eee;
             cursor: pointer;
-            transition: background 0.2s;
         }
 
         .device-item:hover {
-            background: #f5f5f5;
-        }
-
-        .device-item.selected {
-            background: #e3f2fd;
+            background: #f9f9f9;
         }
 
         .device-item-header {
             display: flex;
             align-items: center;
             gap: 10px;
+            margin-bottom: 8px;
         }
 
         .device-color {
             width: 12px;
             height: 12px;
             border-radius: 50%;
-            flex-shrink: 0;
         }
 
         .device-name {
             font-weight: 600;
-            font-size: 0.95rem;
+            flex: 1;
+        }
+
+        .device-battery {
+            font-size: 12px;
+            color: #666;
         }
 
         .device-info {
-            margin-top: 6px;
-            font-size: 0.8rem;
-            color: #666;
-            padding-left: 22px;
+            font-size: 12px;
+            color: #888;
         }
 
-        .device-info span {
-            margin-right: 10px;
-        }
-
-        .device-status {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            margin-right: 5px;
-        }
-
-        .device-status.online {
-            background: #2ecc71;
-        }
-
-        .device-status.offline {
-            background: #95a5a6;
-        }
-
-        .bottom-controls {
+        .follow-indicator {
             position: fixed;
-            bottom: 20px;
-            left: 10px;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            z-index: 1000;
-        }
-
-        .control-btn {
-            background: white;
-            border: none;
-            padding: 12px 16px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-            cursor: pointer;
-            font-size: 0.9rem;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .control-btn:hover {
-            background: #f5f5f5;
-        }
-
-        .control-btn.active {
+            top: 70px;
+            left: 50%;
+            transform: translateX(-50%);
             background: #0078d4;
             color: white;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 13px;
+            z-index: 999;
+            display: none;
+            box-shadow: 0 2px 10px rgba(0, 120, 212, 0.3);
         }
 
-        .legend {
-            position: fixed;
-            bottom: 20px;
-            right: 10px;
-            background: white;
-            padding: 10px 15px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-            z-index: 1000;
-            font-size: 0.8rem;
-        }
-
-        .legend-item {
+        .follow-indicator.show {
             display: flex;
             align-items: center;
-            gap: 8px;
-            margin: 5px 0;
+            gap: 10px;
         }
 
-        .legend-color {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
+        .follow-stop {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 11px;
         }
 
         .history-panel {
             position: fixed;
-            bottom: 0;
+            bottom: 60px;
             left: 0;
             right: 0;
             background: white;
             border-radius: 20px 20px 0 0;
-            box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.2);
-            z-index: 1001;
-            max-height: 50vh;
+            box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.15);
+            z-index: 998;
             transform: translateY(100%);
-            transition: transform 0.3s ease;
-            padding: 15px 20px;
+            transition: transform 0.3s;
+            padding: 20px;
+            max-height: 300px;
         }
 
-        .history-panel.show {
+        .history-panel.open {
             transform: translateY(0);
         }
 
@@ -262,17 +265,15 @@
         }
 
         .history-header h3 {
-            color: #0078d4;
+            font-size: 16px;
         }
 
         .history-close {
-            background: #f0f0f0;
+            background: none;
             border: none;
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
+            font-size: 24px;
             cursor: pointer;
-            font-size: 1.1rem;
+            color: #666;
         }
 
         .history-controls {
@@ -284,18 +285,18 @@
 
         .history-controls select,
         .history-controls input {
-            padding: 8px 12px;
+            padding: 10px;
             border: 1px solid #ddd;
             border-radius: 8px;
-            font-size: 0.9rem;
+            font-size: 14px;
         }
 
         .history-btn {
-            padding: 8px 16px;
+            padding: 10px 16px;
             border: none;
             border-radius: 8px;
             cursor: pointer;
-            font-size: 0.85rem;
+            font-size: 14px;
         }
 
         .history-btn.primary {
@@ -305,25 +306,20 @@
 
         .history-btn.secondary {
             background: #f0f0f0;
+            color: #333;
         }
 
         .playback-controls {
-            display: none;
+            display: flex;
             align-items: center;
             gap: 10px;
-            padding-top: 10px;
-            border-top: 1px solid #eee;
-        }
-
-        .playback-controls.show {
-            display: flex;
         }
 
         .playback-slider {
             flex: 1;
             height: 6px;
             -webkit-appearance: none;
-            background: #ddd;
+            background: #e0e0e0;
             border-radius: 3px;
         }
 
@@ -338,66 +334,154 @@
 
         .geofence-panel {
             position: fixed;
-            bottom: 0;
+            bottom: 60px;
             left: 0;
             right: 0;
             background: white;
             border-radius: 20px 20px 0 0;
-            box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.2);
-            z-index: 1001;
-            max-height: 50vh;
+            box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.15);
+            z-index: 998;
             transform: translateY(100%);
-            transition: transform 0.3s ease;
-            padding: 15px 20px;
+            transition: transform 0.3s;
+            padding: 20px;
+            max-height: 350px;
             overflow-y: auto;
         }
 
-        .geofence-panel.show {
+        .geofence-panel.open {
             transform: translateY(0);
         }
 
-        .no-devices {
-            padding: 30px;
-            text-align: center;
-            color: #666;
+        .geofence-form {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
         }
 
-        .emoji-marker {
-            font-size: 28px;
-            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
-        }
-
-        .trail-info {
-            position: fixed;
-            top: 70px;
-            left: 10px;
-            background: white;
-            padding: 8px 12px;
+        .geofence-form input {
+            padding: 10px;
+            border: 1px solid #ddd;
             border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-            z-index: 1000;
-            font-size: 0.8rem;
         }
 
-        @media (max-width: 600px) {
-            .device-panel {
-                width: 100%;
-                right: 0;
-                top: 60px;
-                border-radius: 0;
-            }
+        .geofence-form input[type="text"] {
+            grid-column: span 2;
+        }
 
-            .legend {
-                display: none;
-            }
+        .geofence-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            background: #f5f7fa;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
 
-            .header {
-                padding: 10px 12px;
-            }
+        .geofence-delete {
+            background: #d63031;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+        }
 
-            .header h1 {
-                font-size: 1rem;
-            }
+        .no-devices {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+        }
+
+        .no-devices .icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .add-device-btn {
+            background: #00b894;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 15px;
+        }
+
+        .add-device-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            display: none;
+        }
+
+        .add-device-modal.show {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 16px;
+            padding: 25px;
+            width: 90%;
+            max-width: 400px;
+        }
+
+        .modal-content h3 {
+            margin-bottom: 20px;
+        }
+
+        .modal-content .form-group {
+            margin-bottom: 15px;
+        }
+
+        .modal-content label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+
+        .modal-content input,
+        .modal-content select {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .modal-buttons button {
+            flex: 1;
+            padding: 12px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .modal-buttons .cancel {
+            background: #f0f0f0;
+        }
+
+        .modal-buttons .submit {
+            background: #0078d4;
+            color: white;
         }
     </style>
 </head>
@@ -406,47 +490,59 @@
     <div class="header">
         <div class="header-left">
             <img src="profile.jpg" class="profile-img"
-                onerror="this.src='https://ui-avatars.com/api/?name=E&background=0078d4&color=fff'">
+                onerror="this.src='https://ui-avatars.com/api/?name=M&background=0078d4&color=fff'">
             <div>
-                <h1>&#x1F4CD; MyTrackHub</h1>
-                <div class="header-subtitle">Multi-Device Tracking</div>
+                <h1>MyTrackHub</h1>
+                <div class="header-subtitle" id="userRoleDisplay">Loading...</div>
             </div>
         </div>
-        <div class="device-count" onclick="toggleDevicePanel()">
-            <span id="deviceCountText">0 Devices</span>
+        <div class="user-menu">
+            <span class="user-name" id="userName"></span>
+            <button class="logout-btn" onclick="logout()">Logout</button>
         </div>
     </div>
 
     <div id="map"></div>
 
-    <div class="trail-info" id="trailInfo" style="display:none;">
-        &#x1F6B6; Trail: <span id="trailCount">0</span> points
+    <div class="follow-indicator" id="followIndicator">
+        <span>Following: <strong id="followingDevice"></strong></span>
+        <button class="follow-stop" onclick="stopFollow()">Stop</button>
     </div>
 
     <div class="device-panel" id="devicePanel">
         <div class="device-panel-header">
-            <span>&#x1F4F1; Devices</span>
-            <button class="device-panel-close" onclick="toggleDevicePanel()">&times;</button>
+            <span>My Devices</span>
+            <button class="device-panel-close" onclick="toggleDevicePanel()">×</button>
         </div>
-        <div class="device-list" id="deviceList">
-            <div class="no-devices">No devices connected yet</div>
+        <div id="deviceList"></div>
+        <div style="padding: 15px;">
+            <button class="add-device-btn" onclick="showAddDevice()">+ Add Device</button>
         </div>
     </div>
 
     <div class="bottom-controls">
-        <button class="control-btn" onclick="toggleHistoryPanel()">&#x1F4DC; History</button>
-        <button class="control-btn" onclick="toggleGeofencePanel()">&#x1F3AF; Geofences</button>
-        <button class="control-btn" onclick="fitAllDevices()">&#x1F4CD; Show All</button>
-        <button class="control-btn" id="followBtn" onclick="toggleFollow()">&#x1F3AF; Follow</button>
-        <button class="control-btn" id="trailBtn" onclick="toggleLiveTrail()">&#x1F6B6; Trail</button>
+        <button class="control-btn" onclick="toggleDevicePanel()">
+            <span>📱</span>
+            <span id="deviceCountText">0 Devices</span>
+        </button>
+        <button class="control-btn" onclick="toggleHistoryPanel()">
+            <span>📜</span>
+            History
+        </button>
+        <button class="control-btn" onclick="toggleGeofencePanel()">
+            <span>🎯</span>
+            Geofences
+        </button>
+        <button class="control-btn" onclick="fitAllDevices()">
+            <span>📍</span>
+            Show All
+        </button>
     </div>
-
-    <div class="legend" id="legend"></div>
 
     <div class="history-panel" id="historyPanel">
         <div class="history-header">
-            <h3>&#x1F4DC; History</h3>
-            <button class="history-close" onclick="toggleHistoryPanel()">&times;</button>
+            <h3>Location History</h3>
+            <button class="history-close" onclick="toggleHistoryPanel()">×</button>
         </div>
         <div class="history-controls">
             <select id="historyDevice">
@@ -454,262 +550,490 @@
             </select>
             <input type="date" id="historyDate">
             <button class="history-btn primary" onclick="loadHistory()">Load</button>
-            <button class="history-btn secondary" onclick="loadTodayHistory()">Today</button>
             <button class="history-btn secondary" onclick="clearHistory()">Clear</button>
         </div>
-        <div class="playback-controls" id="playbackControls">
-            <button class="history-btn secondary" id="playBtn" onclick="togglePlayback()">&#x25B6;&#xFE0F;</button>
+        <div class="playback-controls" id="playbackControls" style="display:none;">
+            <button class="history-btn secondary" id="playBtn" onclick="togglePlayback()">▶</button>
             <input type="range" class="playback-slider" id="playbackSlider" min="0" max="100" value="0">
-            <span id="playbackTime">--</span>
+            <span id="playbackTime">--:--</span>
         </div>
     </div>
 
     <div class="geofence-panel" id="geofencePanel">
         <div class="history-header">
-            <h3>&#x1F3AF; Geofences</h3>
-            <button class="history-close" onclick="toggleGeofencePanel()">&times;</button>
+            <h3>Geofences</h3>
+            <button class="history-close" onclick="toggleGeofencePanel()">×</button>
         </div>
+        <div class="geofence-form">
+            <input type="text" id="geoName" placeholder="Zone name (e.g., School)">
+            <input type="number" id="geoLat" placeholder="Latitude" step="any">
+            <input type="number" id="geoLng" placeholder="Longitude" step="any">
+            <input type="number" id="geoRadius" placeholder="Radius (m)" value="100">
+            <button class="history-btn primary" onclick="createGeofence()" style="grid-column: span 2;">Create
+                Geofence</button>
+        </div>
+        <p style="font-size:12px;color:#888;margin-bottom:15px;">Tip: Click on the map to set coordinates</p>
         <div id="geofenceList"></div>
-        <button class="history-btn primary" style="width:100%;margin-top:10px;" onclick="startAddGeofence()">+ Add
-            Geofence</button>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+    <div class="add-device-modal" id="addDeviceModal">
+        <div class="modal-content">
+            <h3>Add New Device</h3>
+            <div class="form-group">
+                <label>Device Name</label>
+                <input type="text" id="newDeviceName" placeholder="Jake's Phone">
+            </div>
+            <div class="form-group">
+                <label>Device ID (from OwnTracks)</label>
+                <input type="text" id="newDeviceId" placeholder="Jake">
+            </div>
+            <div class="form-group">
+                <label>Color</label>
+                <select id="newDeviceColor">
+                    <option value="#0078d4">Blue</option>
+                    <option value="#00b894">Green</option>
+                    <option value="#d63031">Red</option>
+                    <option value="#6c5ce7">Purple</option>
+                    <option value="#fdcb6e">Yellow</option>
+                    <option value="#e84393">Pink</option>
+                </select>
+            </div>
+            <div class="modal-buttons">
+                <button class="cancel" onclick="hideAddDevice()">Cancel</button>
+                <button class="submit" onclick="addDevice()">Add Device</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        const map = L.map('map').setView([42.2695, -71.6162], 16);
-        L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { attribution: '© Google', maxZoom: 22 }).addTo(map);
+        // Auth check
+        const token = localStorage.getItem('mytrackhub_token');
+        const currentUser = JSON.parse(localStorage.getItem('mytrackhub_user') || '{}');
 
-        let devices = {}, markers = {}, accuracyCircles = {}, deviceModes = {};
-        let liveTrails = {}, liveTrailLines = {};
-        let historyLine = null, historyMarker = null, historyData = [], isPlaying = false, playbackIndex = 0, playbackInterval = null;
-        let geofences = [], geofenceCircles = {}, isAddingGeofence = false;
-
-        // Follow mode and live trail settings
-        let followMode = true;
-        let followDeviceId = null;
-        let showLiveTrail = true;
-        const MAX_TRAIL_POINTS = 200;
-
-        const modeIcons = {
-            stationary: '&#x1F4CD;',
-            walking: '&#x1F6B6;',
-            biking: '&#x1F6B4;',
-            driving: '&#x1F697;',
-            van: '&#x1F690;'
-        };
-
-        function detectTransportMode(speedKmh) {
-            if (speedKmh < 1) return 'stationary';
-            if (speedKmh < 6) return 'walking';
-            if (speedKmh < 25) return 'biking';
-            return 'driving';
+        if (!token) {
+            window.location.href = '/login.html';
         }
 
-        function createDeviceIcon(color, name, mode) {
-            const icon = modeIcons[mode] || modeIcons.stationary;
-            return L.divIcon({
-                html: '<div style="font-size:32px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));text-align:center;">' + icon + '</div>',
-                iconSize: [36, 36],
-                iconAnchor: [18, 18],
-                className: 'emoji-marker'
+        // Display user info
+        document.getElementById('userName').textContent = currentUser.name || '';
+        document.getElementById('userRoleDisplay').textContent =
+            currentUser.role === 'admin' ? 'Admin View' : 'Family Tracking';
+
+        // API helper
+        async function api(endpoint, method = 'GET', body = null) {
+            const options = {
+                method,
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            };
+            if (body) options.body = JSON.stringify(body);
+
+            const response = await fetch(endpoint, options);
+            if (response.status === 401) {
+                logout();
+                return null;
+            }
+            return response.json();
+        }
+
+        function logout() {
+            localStorage.removeItem('mytrackhub_token');
+            localStorage.removeItem('mytrackhub_user');
+            window.location.href = '/login.html';
+        }
+
+        // Map setup
+        const map = L.map('map').setView([42.2626, -71.8023], 13);
+        L.tileLayer('https://mt1.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
+            maxZoom: 20,
+            attribution: '© Google'
+        }).addTo(map);
+
+        // State
+        let devices = {};
+        let markers = {};
+        let trails = {};
+        let geofenceCircles = {};
+        let followingDevice = null;
+        let historyLine = null;
+        let historyData = [];
+        let isPlaying = false;
+        let playbackIndex = 0;
+
+        // Mode emojis
+        const modeEmoji = {
+            stationary: '📍',
+            walking: '🚶',
+            biking: '🚴',
+            driving: '🚗'
+        };
+
+        // Load initial data
+        async function init() {
+            await loadDevices();
+            await loadGeofences();
+            connectStream();
+
+            // Set today's date for history
+            document.getElementById('historyDate').valueAsDate = new Date();
+        }
+
+        async function loadDevices() {
+            const data = await api('/api/devices');
+            if (!data) return;
+
+            const deviceList = document.getElementById('deviceList');
+            const historySelect = document.getElementById('historyDevice');
+
+            if (data.length === 0) {
+                deviceList.innerHTML = `
+                    <div class="no-devices">
+                        <div class="icon">📱</div>
+                        <p>No devices yet</p>
+                        <p style="font-size:12px;margin-top:5px;">Add your first device to start tracking</p>
+                    </div>
+                `;
+            } else {
+                deviceList.innerHTML = data.map(d => `
+                    <div class="device-item" onclick="focusDevice('${d.deviceId}')">
+                        <div class="device-item-header">
+                            <div class="device-color" style="background:${d.color}"></div>
+                            <span class="device-name">${d.name}</span>
+                            <span class="device-battery">${d.battery ? d.battery + '%' : '--'}</span>
+                        </div>
+                        <div class="device-info">
+                            ${d.lastSeen ? 'Last seen: ' + new Date(d.lastSeen).toLocaleString() : 'Waiting for location...'}
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            // Update device count
+            document.getElementById('deviceCountText').textContent = data.length + ' Device' + (data.length !== 1 ? 's' : '');
+
+            // Update history dropdown
+            historySelect.innerHTML = '<option value="">All Devices</option>' +
+                data.map(d => `<option value="${d.deviceId}">${d.name}</option>`).join('');
+
+            // Store device info
+            data.forEach(d => {
+                devices[d.deviceId] = d;
+            });
+        }
+
+        async function loadGeofences() {
+            const data = await api('/api/geofences');
+            if (!data) return;
+
+            const list = document.getElementById('geofenceList');
+
+            // Clear existing circles
+            Object.values(geofenceCircles).forEach(c => map.removeLayer(c));
+            geofenceCircles = {};
+
+            if (data.length === 0) {
+                list.innerHTML = '<p style="color:#999;text-align:center;">No geofences yet</p>';
+            } else {
+                list.innerHTML = data.map(g => `
+                    <div class="geofence-item">
+                        <div>
+                            <strong>${g.name}</strong>
+                            <div style="font-size:12px;color:#888;">${g.radius}m radius</div>
+                        </div>
+                        <button class="geofence-delete" onclick="deleteGeofence(${g.id})">Delete</button>
+                    </div>
+                `).join('');
+
+                // Draw circles
+                data.forEach(g => {
+                    geofenceCircles[g.id] = L.circle([g.lat, g.lng], {
+                        radius: g.radius,
+                        color: '#0078d4',
+                        fillOpacity: 0.1
+                    }).addTo(map).bindPopup(g.name);
+                });
+            }
+        }
+
+        // Real-time stream
+        function connectStream() {
+            const eventSource = new EventSource('/api/stream', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            // Workaround: EventSource doesn't support headers, so we use fetch for initial auth
+            // Then reconnect with token in URL (handled server-side)
+
+            fetch('/api/stream', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            }).then(response => {
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                function read() {
+                    reader.read().then(({ done, value }) => {
+                        if (done) {
+                            setTimeout(connectStream, 3000);
+                            return;
+                        }
+
+                        const text = decoder.decode(value);
+                        const lines = text.split('\n');
+
+                        lines.forEach(line => {
+                            if (line.startsWith('data: ')) {
+                                try {
+                                    const data = JSON.parse(line.substring(6));
+                                    updateDevice(data);
+                                } catch (e) { }
+                            }
+                        });
+
+                        read();
+                    });
+                }
+
+                read();
+            }).catch(() => {
+                setTimeout(connectStream, 3000);
             });
         }
 
         function updateDevice(data) {
-            const deviceId = data.deviceId, color = data.color || '#e74c3c', name = data.name || deviceId, loc = data.location || data;
-            devices[deviceId] = { ...data, location: loc };
-            const latlng = [loc.latitude, loc.longitude];
-            const speed = loc.velocity || 0;
-            const mode = detectTransportMode(speed);
-            deviceModes[deviceId] = mode;
+            const deviceId = data.deviceId;
+            const device = devices[deviceId] || { name: deviceId, color: '#0078d4' };
 
+            const emoji = modeEmoji[data.mode] || '📍';
+            const icon = L.divIcon({
+                html: `<div style="font-size:28px;filter:drop-shadow(2px 2px 2px rgba(0,0,0,0.5))">${emoji}</div>`,
+                iconSize: [30, 30],
+                iconAnchor: [15, 15],
+                className: ''
+            });
+
+            // Update or create marker
             if (markers[deviceId]) {
-                markers[deviceId].setLatLng(latlng);
-                markers[deviceId].setIcon(createDeviceIcon(color, name, mode));
+                markers[deviceId].setLatLng([data.lat, data.lng]);
+                markers[deviceId].setIcon(icon);
             } else {
-                markers[deviceId] = L.marker(latlng, { icon: createDeviceIcon(color, name, mode) }).addTo(map);
-                markers[deviceId].on('click', function () { selectDevice(deviceId); });
-                if (!followDeviceId) {
-                    followDeviceId = deviceId;
-                }
+                markers[deviceId] = L.marker([data.lat, data.lng], { icon })
+                    .addTo(map)
+                    .bindPopup(`<b>${device.name}</b>`);
             }
 
-            const modeLabel = mode.charAt(0).toUpperCase() + mode.slice(1);
-            markers[deviceId].bindPopup('<b>' + name + '</b><br>&#x1F50B; Battery: ' + (loc.battery || '--') + '%<br>&#x1F4CD; Accuracy: ' + (loc.accuracy || '--') + 'm<br>&#x1F3CE; Speed: ' + (speed || 0) + ' km/h<br>&#x1F6B6; Mode: ' + modeLabel + '<br>&#x23F1; Updated: ' + new Date(loc.receivedAt).toLocaleTimeString());
+            // Update popup
+            markers[deviceId].setPopupContent(`
+                <b>${device.name}</b><br>
+                ${emoji} ${data.mode}<br>
+                🔋 ${data.battery || '--'}%<br>
+                ${new Date(data.timestamp).toLocaleTimeString()}
+            `);
 
-            if (accuracyCircles[deviceId]) {
-                accuracyCircles[deviceId].setLatLng(latlng);
-                accuracyCircles[deviceId].setRadius(loc.accuracy || 10);
-                accuracyCircles[deviceId].setStyle({ color: color, fillColor: color });
-            } else {
-                accuracyCircles[deviceId] = L.circle(latlng, { radius: loc.accuracy || 10, color: color, fillColor: color, fillOpacity: 0.15, weight: 2 }).addTo(map);
+            // Update trail
+            if (!trails[deviceId]) {
+                trails[deviceId] = L.polyline([], {
+                    color: device.color,
+                    weight: 3,
+                    opacity: 0.7
+                }).addTo(map);
             }
 
-            if (showLiveTrail) {
-                if (!liveTrails[deviceId]) {
-                    liveTrails[deviceId] = [];
-                }
-                liveTrails[deviceId].push(latlng);
+            const trailCoords = trails[deviceId].getLatLngs();
+            trailCoords.push([data.lat, data.lng]);
+            if (trailCoords.length > 100) trailCoords.shift();
+            trails[deviceId].setLatLngs(trailCoords);
 
-                if (liveTrails[deviceId].length > MAX_TRAIL_POINTS) {
-                    liveTrails[deviceId].shift();
-                }
-
-                if (liveTrailLines[deviceId]) {
-                    liveTrailLines[deviceId].setLatLngs(liveTrails[deviceId]);
-                } else {
-                    liveTrailLines[deviceId] = L.polyline(liveTrails[deviceId], {
-                        color: color,
-                        weight: 4,
-                        opacity: 0.7
-                    }).addTo(map);
-                }
-
-                updateTrailInfo();
-            }
-
-            if (followMode && followDeviceId === deviceId) {
-                map.setView(latlng, map.getZoom());
-            }
-
-            updateDeviceList();
-            updateLegend();
-        }
-
-        function updateTrailInfo() {
-            const trailInfo = document.getElementById('trailInfo');
-            const totalPoints = Object.values(liveTrails).reduce(function (sum, trail) { return sum + trail.length; }, 0);
-            if (totalPoints > 0 && showLiveTrail) {
-                trailInfo.style.display = 'block';
-                document.getElementById('trailCount').textContent = totalPoints;
-            } else {
-                trailInfo.style.display = 'none';
+            // Follow mode
+            if (followingDevice === deviceId) {
+                map.setView([data.lat, data.lng], map.getZoom());
             }
         }
 
-        function toggleFollow() {
-            followMode = !followMode;
-            const btn = document.getElementById('followBtn');
-            if (followMode) {
-                btn.classList.add('active');
-                btn.innerHTML = '&#x1F3AF; Following';
-                if (followDeviceId && devices[followDeviceId] && devices[followDeviceId].location) {
-                    const loc = devices[followDeviceId].location;
-                    map.setView([loc.latitude, loc.longitude], map.getZoom());
-                }
-            } else {
-                btn.classList.remove('active');
-                btn.innerHTML = '&#x1F3AF; Follow';
-            }
+        // UI functions
+        function toggleDevicePanel() {
+            document.getElementById('devicePanel').classList.toggle('open');
         }
 
-        function toggleLiveTrail() {
-            showLiveTrail = !showLiveTrail;
-            const btn = document.getElementById('trailBtn');
-            if (showLiveTrail) {
-                btn.classList.add('active');
-                btn.innerHTML = '&#x1F6B6; Trail ON';
-            } else {
-                btn.classList.remove('active');
-                btn.innerHTML = '&#x1F6B6; Trail';
-                Object.values(liveTrailLines).forEach(function (line) {
-                    map.removeLayer(line);
-                });
-                liveTrailLines = {};
-                liveTrails = {};
-                updateTrailInfo();
-            }
+        function toggleHistoryPanel() {
+            document.getElementById('historyPanel').classList.toggle('open');
+            document.getElementById('geofencePanel').classList.remove('open');
         }
 
-        function updateDeviceList() {
-            const list = document.getElementById('deviceList'), deviceIds = Object.keys(devices);
-            document.getElementById('deviceCountText').textContent = deviceIds.length + ' Device' + (deviceIds.length !== 1 ? 's' : '');
-            if (deviceIds.length === 0) { list.innerHTML = '<div class="no-devices">No devices connected yet</div>'; return; }
-            const select = document.getElementById('historyDevice');
-            select.innerHTML = '<option value="">All Devices</option>';
-            list.innerHTML = deviceIds.map(function (id) {
-                const d = devices[id], loc = d.location || {}, isOnline = loc.receivedAt && (Date.now() - new Date(loc.receivedAt).getTime()) < 300000;
-                const mode = deviceModes[id] || 'stationary';
-                const modeIcon = mode === 'walking' ? '&#x1F6B6;' : mode === 'biking' ? '&#x1F6B4;' : mode === 'driving' ? '&#x1F697;' : '&#x1F4CD;';
-                const isFollowing = followDeviceId === id ? ' (Following)' : '';
-                select.innerHTML += '<option value="' + id + '">' + (d.name || id) + '</option>';
-                return '<div class="device-item" onclick="selectDevice(\'' + id + '\')"><div class="device-item-header"><div class="device-color" style="background:' + d.color + '"></div><span class="device-name">' + (d.name || id) + isFollowing + '</span><span class="device-status ' + (isOnline ? 'online' : 'offline') + '"></span></div><div class="device-info"><span>' + modeIcon + ' ' + (loc.velocity || 0) + ' km/h</span><span>&#x1F50B; ' + (loc.battery || '--') + '%</span><span>&#x1F4CD; ' + (loc.accuracy || '--') + 'm</span></div></div>';
-            }).join('');
+        function toggleGeofencePanel() {
+            document.getElementById('geofencePanel').classList.toggle('open');
+            document.getElementById('historyPanel').classList.remove('open');
         }
 
-        function updateLegend() {
-            const legend = document.getElementById('legend'), deviceIds = Object.keys(devices);
-            if (deviceIds.length === 0) { legend.style.display = 'none'; return; }
-            legend.style.display = 'block';
-            legend.innerHTML = '<div style="font-weight:600;margin-bottom:8px;">Devices</div>' + deviceIds.map(function (id) {
-                const mode = deviceModes[id] || 'stationary';
-                const modeIcon = mode === 'walking' ? '&#x1F6B6;' : mode === 'biking' ? '&#x1F6B4;' : mode === 'driving' ? '&#x1F697;' : '&#x1F4CD;';
-                return '<div class="legend-item">' + modeIcon + ' <span>' + (devices[id].name || id) + '</span></div>';
-            }).join('');
-        }
-
-        function selectDevice(deviceId) {
-            const d = devices[deviceId];
-            if (d && d.location) {
-                map.setView([d.location.latitude, d.location.longitude], 17);
+        function focusDevice(deviceId) {
+            if (markers[deviceId]) {
+                map.setView(markers[deviceId].getLatLng(), 17);
                 markers[deviceId].openPopup();
-                followDeviceId = deviceId;
-                updateDeviceList();
+                followingDevice = deviceId;
+
+                const device = devices[deviceId] || { name: deviceId };
+                document.getElementById('followingDevice').textContent = device.name;
+                document.getElementById('followIndicator').classList.add('show');
             }
             toggleDevicePanel();
         }
 
-        function fitAllDevices() { const deviceIds = Object.keys(devices); if (deviceIds.length === 0) return; const bounds = L.latLngBounds(); deviceIds.forEach(function (id) { const d = devices[id]; if (d && d.location) bounds.extend([d.location.latitude, d.location.longitude]); }); map.fitBounds(bounds.pad(0.2)); }
-        function toggleDevicePanel() { document.getElementById('devicePanel').classList.toggle('show'); }
-        function toggleHistoryPanel() { document.getElementById('historyPanel').classList.toggle('show'); document.getElementById('geofencePanel').classList.remove('show'); document.getElementById('historyDate').value = new Date().toISOString().split('T')[0]; }
-        function toggleGeofencePanel() { document.getElementById('geofencePanel').classList.toggle('show'); document.getElementById('historyPanel').classList.remove('show'); loadGeofences(); }
-
-        async function loadHistory() { const deviceId = document.getElementById('historyDevice').value, date = document.getElementById('historyDate').value; if (!date) { alert('Please select a date'); return; } const start = new Date(date + 'T00:00:00').toISOString(), end = new Date(date + 'T23:59:59').toISOString(); let url = '/api/history?start=' + start + '&end=' + end; if (deviceId) url += '&deviceId=' + deviceId; const res = await fetch(url), data = await res.json(); historyData = data.locations; displayHistory(); }
-        async function loadTodayHistory() { document.getElementById('historyDate').value = new Date().toISOString().split('T')[0]; await loadHistory(); }
-        function displayHistory() { if (historyLine) map.removeLayer(historyLine); if (historyMarker) map.removeLayer(historyMarker); if (historyData.length === 0) { alert('No history found'); return; } const points = historyData.map(function (loc) { return [loc.latitude, loc.longitude]; }); historyLine = L.polyline(points, { color: '#e74c3c', weight: 4, opacity: 0.8, dashArray: '10, 5' }).addTo(map); map.fitBounds(historyLine.getBounds().pad(0.1)); document.getElementById('playbackControls').classList.add('show'); document.getElementById('playbackSlider').max = historyData.length - 1; document.getElementById('playbackSlider').value = 0; document.getElementById('playbackSlider').oninput = function () { showHistoryPoint(parseInt(this.value)); }; showHistoryPoint(0); }
-        function showHistoryPoint(index) { const loc = historyData[index]; if (!loc) return; const latlng = [loc.latitude, loc.longitude]; if (historyMarker) historyMarker.setLatLng(latlng); else historyMarker = L.marker(latlng, { icon: L.divIcon({ html: '<div style="background:#e74c3c;width:20px;height:20px;border-radius:50%;border:3px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.3);"></div>', iconSize: [20, 20], iconAnchor: [10, 10] }) }).addTo(map); document.getElementById('playbackTime').textContent = new Date(loc.savedAt).toLocaleTimeString(); playbackIndex = index; }
-        function togglePlayback() { if (isPlaying) stopPlayback(); else startPlayback(); }
-        function startPlayback() { isPlaying = true; document.getElementById('playBtn').innerHTML = '&#x23F8;&#xFE0F;'; playbackInterval = setInterval(function () { playbackIndex++; if (playbackIndex >= historyData.length) playbackIndex = 0; document.getElementById('playbackSlider').value = playbackIndex; showHistoryPoint(playbackIndex); }, 300); }
-        function stopPlayback() { isPlaying = false; document.getElementById('playBtn').innerHTML = '&#x25B6;&#xFE0F;'; if (playbackInterval) clearInterval(playbackInterval); }
-        async function clearHistory() { const deviceId = document.getElementById('historyDevice').value; let url = '/api/history'; if (deviceId) url += '?deviceId=' + deviceId; await fetch(url, { method: 'DELETE' }); if (historyLine) map.removeLayer(historyLine); if (historyMarker) map.removeLayer(historyMarker); historyData = []; document.getElementById('playbackControls').classList.remove('show'); alert('History cleared'); }
-
-        async function loadGeofences() { const res = await fetch('/api/geofences'); geofences = await res.json(); renderGeofences(); }
-        function renderGeofences() { const list = document.getElementById('geofenceList'); Object.values(geofenceCircles).forEach(function (c) { map.removeLayer(c); }); geofenceCircles = {}; geofences.forEach(function (gf) { geofenceCircles[gf.id] = L.circle([gf.lat, gf.lng], { radius: gf.radius, color: '#ff6b6b', fillColor: '#ff6b6b', fillOpacity: 0.2, dashArray: '5, 5' }).addTo(map).bindTooltip(gf.name); }); if (geofences.length === 0) { list.innerHTML = '<p style="color:#666;text-align:center;padding:20px;">No geofences. Tap below to add one.</p>'; return; } list.innerHTML = geofences.map(function (gf) { return '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:#f8f9fa;border-radius:8px;margin-bottom:8px;"><div><div style="font-weight:600;">' + gf.name + '</div><div style="font-size:0.8rem;color:#666;">' + gf.radius + 'm radius</div></div><button onclick="deleteGeofence(' + gf.id + ')" style="background:#dc3545;color:white;border:none;padding:8px 12px;border-radius:6px;cursor:pointer;">&times;</button></div>'; }).join(''); }
-        function startAddGeofence() { isAddingGeofence = true; map.getContainer().style.cursor = 'crosshair'; alert('Tap on the map to place a geofence'); }
-        map.on('click', async function (e) { if (!isAddingGeofence) return; const name = prompt('Geofence name:', 'Zone ' + (geofences.length + 1)); if (!name) { isAddingGeofence = false; map.getContainer().style.cursor = ''; return; } const radius = prompt('Radius in meters:', '100'); if (!radius) { isAddingGeofence = false; map.getContainer().style.cursor = ''; return; } geofences.push({ id: Date.now(), name: name, lat: e.latlng.lat, lng: e.latlng.lng, radius: parseInt(radius) }); await fetch('/api/geofences', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(geofences) }); renderGeofences(); isAddingGeofence = false; map.getContainer().style.cursor = ''; });
-        async function deleteGeofence(id) { geofences = geofences.filter(function (g) { return g.id !== id; }); await fetch('/api/geofences', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(geofences) }); renderGeofences(); }
-
-        function connectSSE() {
-            const eventSource = new EventSource('/events');
-            eventSource.onmessage = function (event) {
-                const data = JSON.parse(event.data);
-                if (data.type === 'all') {
-                    data.devices.forEach(function (d) { updateDevice(d); });
-                    if (data.devices.length > 0 && !followMode) fitAllDevices();
-                } else if (data.type === 'update') {
-                    updateDevice(data);
-                }
-            };
-            eventSource.onerror = function () {
-                console.log('SSE connection lost, reconnecting...');
-            };
+        function stopFollow() {
+            followingDevice = null;
+            document.getElementById('followIndicator').classList.remove('show');
         }
 
-        async function init() {
-            const res = await fetch('/api/devices'), deviceList = await res.json();
-            deviceList.forEach(function (d) {
-                if (d.latestLocation) updateDevice({ ...d, location: d.latestLocation });
-            });
-            if (deviceList.length > 0 && !followMode) fitAllDevices();
+        function fitAllDevices() {
+            const markerArray = Object.values(markers);
+            if (markerArray.length > 0) {
+                const group = L.featureGroup(markerArray);
+                map.fitBounds(group.getBounds().pad(0.1));
+            }
+        }
+
+        // Add device
+        function showAddDevice() {
+            document.getElementById('addDeviceModal').classList.add('show');
+        }
+
+        function hideAddDevice() {
+            document.getElementById('addDeviceModal').classList.remove('show');
+        }
+
+        async function addDevice() {
+            const name = document.getElementById('newDeviceName').value;
+            const deviceId = document.getElementById('newDeviceId').value;
+            const color = document.getElementById('newDeviceColor').value;
+
+            if (!name || !deviceId) {
+                alert('Please fill in all fields');
+                return;
+            }
+
+            const result = await api('/api/devices', 'POST', { name, deviceId, color });
+            if (result && !result.error) {
+                hideAddDevice();
+                loadDevices();
+            } else {
+                alert(result?.error || 'Failed to add device');
+            }
+        }
+
+        // Geofences
+        map.on('click', function (e) {
+            if (document.getElementById('geofencePanel').classList.contains('open')) {
+                document.getElementById('geoLat').value = e.latlng.lat.toFixed(6);
+                document.getElementById('geoLng').value = e.latlng.lng.toFixed(6);
+            }
+        });
+
+        async function createGeofence() {
+            const name = document.getElementById('geoName').value;
+            const lat = parseFloat(document.getElementById('geoLat').value);
+            const lng = parseFloat(document.getElementById('geoLng').value);
+            const radius = parseInt(document.getElementById('geoRadius').value) || 100;
+
+            if (!name || !lat || !lng) {
+                alert('Please fill in all fields');
+                return;
+            }
+
+            await api('/api/geofences', 'POST', { name, lat, lng, radius });
             loadGeofences();
-            connectSSE();
 
-            document.getElementById('followBtn').classList.add('active');
-            document.getElementById('followBtn').innerHTML = '&#x1F3AF; Following';
-            document.getElementById('trailBtn').classList.add('active');
-            document.getElementById('trailBtn').innerHTML = '&#x1F6B6; Trail ON';
+            document.getElementById('geoName').value = '';
+            document.getElementById('geoLat').value = '';
+            document.getElementById('geoLng').value = '';
         }
 
+        async function deleteGeofence(id) {
+            if (!confirm('Delete this geofence?')) return;
+            await api(`/api/geofences/${id}`, 'DELETE');
+            loadGeofences();
+        }
+
+        // History
+        async function loadHistory() {
+            const deviceId = document.getElementById('historyDevice').value;
+            const date = document.getElementById('historyDate').value;
+
+            let url = '/api/history?';
+            if (deviceId) url += `deviceId=${deviceId}&`;
+            if (date) url += `date=${date}`;
+
+            historyData = await api(url);
+            if (!historyData || historyData.length === 0) {
+                alert('No history found for selected criteria');
+                return;
+            }
+
+            // Draw history line
+            if (historyLine) map.removeLayer(historyLine);
+
+            const coords = historyData.map(h => [h.lat, h.lng]);
+            historyLine = L.polyline(coords, {
+                color: '#ff6b6b',
+                weight: 4,
+                opacity: 0.8
+            }).addTo(map);
+
+            map.fitBounds(historyLine.getBounds().pad(0.1));
+
+            // Show playback controls
+            document.getElementById('playbackControls').style.display = 'flex';
+            document.getElementById('playbackSlider').max = historyData.length - 1;
+            document.getElementById('playbackSlider').value = 0;
+            updatePlaybackTime(0);
+        }
+
+        function clearHistory() {
+            if (historyLine) {
+                map.removeLayer(historyLine);
+                historyLine = null;
+            }
+            historyData = [];
+            document.getElementById('playbackControls').style.display = 'none';
+        }
+
+        function updatePlaybackTime(index) {
+            if (historyData[index]) {
+                const time = new Date(historyData[index].timestamp).toLocaleTimeString();
+                document.getElementById('playbackTime').textContent = time;
+            }
+        }
+
+        document.getElementById('playbackSlider').addEventListener('input', function () {
+            updatePlaybackTime(parseInt(this.value));
+        });
+
+        function togglePlayback() {
+            isPlaying = !isPlaying;
+            document.getElementById('playBtn').textContent = isPlaying ? '⏸' : '▶';
+
+            if (isPlaying) playHistory();
+        }
+
+        function playHistory() {
+            if (!isPlaying || playbackIndex >= historyData.length) {
+                isPlaying = false;
+                document.getElementById('playBtn').textContent = '▶';
+                playbackIndex = 0;
+                return;
+            }
+
+            const point = historyData[playbackIndex];
+            map.setView([point.lat, point.lng], 17);
+
+            document.getElementById('playbackSlider').value = playbackIndex;
+            updatePlaybackTime(playbackIndex);
+
+            playbackIndex++;
+            setTimeout(playHistory, 500);
+        }
+
+        // Initialize
         init();
     </script>
 </body>
