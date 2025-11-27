@@ -4,30 +4,43 @@ const path = require("path");
 const https = require("https");
 const fs = require("fs");
 
+// ============================================
+// CONFIGURATION
+// ============================================
 const EVENT_HUB_NAME = "iothub-ehub-mytrackhub-69020481-3cfd6703c6";
 const CONSUMER_GROUP = "$Default";
 const PORT = process.env.PORT || 3000;
 
+// Telegram Configuration
 const TELEGRAM_BOT_TOKEN = "8350895730:AAGfUCIS2iXV_rvRIdOkpEpvyVIk_7XFmNo";
 const TELEGRAM_CHAT_ID = "7931850982";
 
+// Authentication Configuration
 const AUTH_ENABLED = true;
 const AUTH_USERNAME = "emmanuel";
 const AUTH_PASSWORD = "MyTrack2025!";
 
+// Mapbox Configuration (for road snapping)
 const MAPBOX_ACCESS_TOKEN = "pk.eyJ1IjoibmtpbGl5dW13YW1pIiwiYSI6ImNtaWgweTJ6aDAxeDkzZHB6dGN4eHNoeHAifQ.MSok94Ifl-UemvqAOAfTzg";
 
+// Location Filtering
 const MAX_ACCURACY_METERS = 50;
 const MIN_DISTANCE_METERS = 3;
 const SNAP_BATCH_SIZE = 15;
 const SNAP_RADIUS_METERS = 50;
 const BATCH_OVERLAP = 3;
 
+// ============================================
+// DATA STORAGE
+// ============================================
 let deviceData = {};
 let snappedHistory = [];
 const SNAPPED_HISTORY_FILE = path.join(__dirname, "snapped_history.json");
 const DEVICES_FILE = path.join(__dirname, "devices.json");
 
+// ============================================
+// TELEGRAM ALERTS
+// ============================================
 function sendTelegramAlert(message) {
     const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
     const data = JSON.stringify({
@@ -60,6 +73,9 @@ function sendTelegramAlert(message) {
     req.end();
 }
 
+// ============================================
+// HISTORY MANAGEMENT
+// ============================================
 function loadSnappedHistory() {
     try {
         if (fs.existsSync(SNAPPED_HISTORY_FILE)) {
@@ -80,6 +96,9 @@ function saveSnappedHistory() {
     fs.writeFileSync(SNAPPED_HISTORY_FILE, JSON.stringify(snappedHistory));
 }
 
+// ============================================
+// DEVICE MANAGEMENT
+// ============================================
 function loadDevices() {
     try {
         if (fs.existsSync(DEVICES_FILE)) {
@@ -114,6 +133,7 @@ function saveDevices() {
 loadSnappedHistory();
 loadDevices();
 
+// Device colors for multi-device support
 const DEVICE_COLORS = ["#e74c3c", "#3498db", "#2ecc71", "#9b59b6", "#f39c12", "#1abc9c", "#e91e63", "#00bcd4"];
 let colorIndex = 0;
 
@@ -140,6 +160,9 @@ function initializeDevice(deviceId) {
     return deviceData[deviceId];
 }
 
+// ============================================
+// MAPBOX ROAD SNAPPING
+// ============================================
 async function snapToRoads(points) {
     if (points.length < 2) {
         return null;
@@ -226,6 +249,9 @@ async function processAndSnapPoints(deviceId) {
     }
 }
 
+// ============================================
+// GEOFENCING
+// ============================================
 let geofences = [];
 let geofenceStates = {};
 const GEOFENCE_FILE = path.join(__dirname, "geofences.json");
@@ -293,10 +319,14 @@ function checkGeofences(deviceId, lat, lon) {
 
 loadGeofences();
 
+// ============================================
+// EXPRESS WEB SERVER
+// ============================================
 const app = express();
 
 app.set('trust proxy', 1);
 
+// Basic Authentication Middleware
 function basicAuth(req, res, next) {
     if (!AUTH_ENABLED) {
         return next();
@@ -322,14 +352,15 @@ function basicAuth(req, res, next) {
 }
 
 app.use(basicAuth);
-
 app.use(express.static(__dirname));
 app.use(express.json());
 
+// Serve main page
 app.get("/", (req, res) => {
     res.sendFile(path.join(__dirname, "index.html"));
 });
 
+// API: Get all devices
 app.get("/api/devices", (req, res) => {
     const devices = Object.values(deviceData).map(d => ({
         deviceId: d.deviceId,
@@ -340,6 +371,7 @@ app.get("/api/devices", (req, res) => {
     res.json(devices);
 });
 
+// API: Update device name/color
 app.put("/api/devices/:deviceId", (req, res) => {
     const { deviceId } = req.params;
     const { name, color } = req.body;
@@ -354,6 +386,7 @@ app.put("/api/devices/:deviceId", (req, res) => {
     }
 });
 
+// API: Geofences
 app.post("/api/geofences", (req, res) => {
     geofences = req.body;
     saveGeofences();
@@ -365,11 +398,13 @@ app.get("/api/geofences", (req, res) => {
     res.json(geofences);
 });
 
+// API: Test Telegram
 app.get("/api/test-telegram", (req, res) => {
     sendTelegramAlert("<b>Test Alert</b>\n\nYour MyTrackHub Telegram notifications are working!");
     res.json({ success: true, message: "Test alert sent!" });
 });
 
+// API: History
 app.get("/api/history", (req, res) => {
     const { start, end, deviceId } = req.query;
 
@@ -424,6 +459,9 @@ app.delete("/api/history", (req, res) => {
     res.json({ success: true, message: "History cleared" });
 });
 
+// ============================================
+// SERVER-SENT EVENTS (SSE)
+// ============================================
 let sseClients = [];
 
 app.get("/events", (req, res) => {
@@ -435,7 +473,7 @@ app.get("/events", (req, res) => {
 
     console.log("Browser connected via SSE");
 
-    // FIXED: Send devices in the format the frontend expects
+    // Send all current devices to new client
     const allDevices = Object.values(deviceData)
         .filter(d => d.latestLocation)
         .map(d => ({
@@ -469,6 +507,9 @@ app.get("/api/locations", (req, res) => {
     res.json(allDevices);
 });
 
+// ============================================
+// START SERVER
+// ============================================
 const server = app.listen(PORT, '127.0.0.1', () => {
     console.log("\nMyTrackHub running on port " + PORT);
     console.log("Public URL: https://track.smartviewafrica.com");
@@ -478,6 +519,9 @@ const server = app.listen(PORT, '127.0.0.1', () => {
     console.log("Telegram alerts: ENABLED\n");
 });
 
+// ============================================
+// BROADCAST LOCATION UPDATES
+// ============================================
 function broadcastLocation(deviceId, location) {
     const device = deviceData[deviceId];
     const message = JSON.stringify({
@@ -493,6 +537,9 @@ function broadcastLocation(deviceId, location) {
     });
 }
 
+// ============================================
+// AZURE IOT HUB CONNECTION
+// ============================================
 async function connectToIoTHub() {
     const eventHubConnectionString = "Endpoint=sb://ihsuprodblres069dednamespace.servicebus.windows.net/;SharedAccessKeyName=iothubowner;SharedAccessKey=itc+vGUiyCjcuEQpW0RnBZEZA7dkLZ+GzAIoTD9xJsQ=;EntityPath=iothub-ehub-mytrackhub-69020481-3cfd6703c6";
 
@@ -515,6 +562,7 @@ async function connectToIoTHub() {
                         const accuracy = payload.acc || 10;
                         const timestamp = payload.tst;
 
+                        // Filter poor accuracy
                         if (accuracy > MAX_ACCURACY_METERS) {
                             console.log("Filtered [" + deviceId + "]: Poor accuracy (" + accuracy + "m)");
                             continue;
@@ -522,6 +570,7 @@ async function connectToIoTHub() {
 
                         const device = initializeDevice(deviceId);
 
+                        // Filter stationary points
                         if (device.lastValidLocation) {
                             const distance = calculateDistance(
                                 device.lastValidLocation.latitude,
@@ -552,6 +601,7 @@ async function connectToIoTHub() {
                         device.lastValidLocation = location;
                         saveDevices();
 
+                        // Add to pending points for road snapping
                         device.pendingPoints.push({
                             deviceId: deviceId,
                             latitude: payload.lat,
@@ -563,11 +613,15 @@ async function connectToIoTHub() {
 
                         console.log("Location from " + deviceId + ": " + payload.lat.toFixed(6) + ", " + payload.lon.toFixed(6) + " | Acc: " + accuracy + "m | Pending: " + device.pendingPoints.length);
 
+                        // Process batch if enough points
                         if (device.pendingPoints.length >= SNAP_BATCH_SIZE) {
                             processAndSnapPoints(deviceId);
                         }
 
+                        // Check geofences
                         checkGeofences(deviceId, payload.lat, payload.lon);
+
+                        // Broadcast to all connected browsers
                         broadcastLocation(deviceId, location);
                     }
                 } catch (err) {
@@ -580,6 +634,7 @@ async function connectToIoTHub() {
         }
     }, { startPosition: { enqueuedOn: new Date() } });
 
+    // Auto-snap remaining points every 30 seconds
     setInterval(async () => {
         for (const deviceId of Object.keys(deviceData)) {
             const device = deviceData[deviceId];
@@ -617,9 +672,11 @@ async function connectToIoTHub() {
         }
     }, 30000);
 
+    // Graceful shutdown
     process.on("SIGINT", async () => {
         console.log("\nShutting down...");
 
+        // Snap remaining points before exit
         for (const deviceId of Object.keys(deviceData)) {
             const device = deviceData[deviceId];
             if (device.pendingPoints.length >= 2) {
