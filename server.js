@@ -21,15 +21,15 @@ const CONFIG = {
     PORT: 3000,
 
     // Azure IoT Hub
-    IOT_CONNECTION: "Endpoint=sb://iothub-ns-smartviewa-62134369-d1026f7567.servicebus.windows.net/;SharedAccessKeyName=iothubowner;SharedAccessKey=YOUR_KEY;EntityPath=smartviewafricahub",
+    IOT_CONNECTION: "Endpoint=sb://ihsuprodblres069dednamespace.servicebus.windows.net/;SharedAccessKeyName=iothubowner;SharedAccessKey=itc+vGUiyCjcuEQpW0RnBZEZA7dkLZ+GzAIoTD9xJsQ=;EntityPath=iothub-ehub-mytrackhub-69020481-3cfd6703c6",
     IOT_CONSUMER_GROUP: "$Default",
 
     // Mapbox (for road snapping)
     MAPBOX_TOKEN: "pk.eyJ1IjoiZW1tYW51ZWxuayIsImEiOiJjbTQ1MG9hMWkwNWdyMmpxdWpraTFnNXo0In0.dSNeXpanOi9MG4BxB5MKcA",
 
     // Telegram (Admin alerts only)
-    TELEGRAM_BOT_TOKEN: "7866877953:AAH5Cs_mT8qgoxK-TL7FyaYzAU6tnNvRk_I",
-    TELEGRAM_CHAT_ID: "6370392783",
+    TELEGRAM_BOT_TOKEN: "8350895730:AAGfUCIS2iXV_rvRIdOkpEpvyVIk_7XFmNo",
+    TELEGRAM_CHAT_ID: "7931850982",
 
     // JWT Secret (for session tokens)
     JWT_SECRET: crypto.randomBytes(64).toString('hex'),
