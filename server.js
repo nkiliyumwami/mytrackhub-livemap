@@ -618,8 +618,10 @@ async function connectToIoTHub() {
                 for (const event of events) {
                     try {
                         const data = event.body;
+                        // Get device ID from IoT Hub system properties
+                        const deviceId = event.systemProperties["iothub-connection-device-id"] || data.tid || 'Unknown';
                         if (data._type === 'location') {
-                            await processLocation(data);
+                            await processLocation(data, deviceId);
                         }
                     } catch (e) {
                         console.error('Event processing error:', e);
@@ -638,9 +640,9 @@ async function connectToIoTHub() {
     }
 }
 
-async function processLocation(data) {
+async function processLocation(data, deviceId) {
     const location = {
-        deviceId: data.tid || 'Unknown',
+        deviceId: deviceId || data.tid || 'Unknown',
         lat: data.lat,
         lng: data.lon,
         accuracy: data.acc,
